@@ -1,0 +1,10 @@
+.Xil/
+build/
+xsim.dir/
+*.jou
+*.log
+*.pb
+*.wdb
+*.vcd
+*.backup
+dfx_runtime.txt
