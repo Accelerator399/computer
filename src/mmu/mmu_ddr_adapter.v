@@ -80,9 +80,19 @@ reg last_served;
 // behind an I-cache or D-cache transaction.
 reg walker_pending;
 reg [31:0] walker_pending_addr;
+reg walker_req_d;
+wire walker_req_rise = walker_req && !walker_req_d;
 wire take_walker_direct = (state == IDLE) && init_calib_complete &&
                           !walker_pending && walker_req;
 wire [31:0] next_walker_addr = walker_pending ? walker_pending_addr : walker_addr;
+
+// Cache-side mem_req is level-style: it stays high until the cache observes
+// ready.  After producing a ready pulse, wait for that level request to drop
+// before accepting another transaction from the same cache.
+reg icache_req_blocked;
+reg dcache_req_blocked;
+wire icache_req_allowed = icache_req && !icache_req_blocked;
+wire dcache_req_allowed = dcache_req && !dcache_req_blocked;
 
 // 输出逻辑和 MIG 握手
 always @(posedge clk) begin
@@ -105,13 +115,22 @@ always @(posedge clk) begin
         last_served <= 0;
         walker_pending <= 1'b0;
         walker_pending_addr <= 32'b0;
+        walker_req_d <= 1'b0;
+        icache_req_blocked <= 1'b0;
+        dcache_req_blocked <= 1'b0;
     end else begin
         // 默认 ready 脉冲为低；MIG valid 信号在发送态保持到 ready。
         icache_ready <= 0;
         dcache_ready <= 0;
         walker_ready <= 0;
+        walker_req_d <= walker_req;
 
-        if (walker_req && !take_walker_direct) begin
+        if(!icache_req)
+            icache_req_blocked <= 1'b0;
+        if(!dcache_req)
+            dcache_req_blocked <= 1'b0;
+
+        if (walker_req_rise && !take_walker_direct) begin
             walker_pending <= 1'b1;
             walker_pending_addr <= walker_addr;
         end
@@ -133,7 +152,7 @@ always @(posedge clk) begin
                     end else
                     // 与状态转移逻辑保持一致的 round-robin 选择
                     if (last_served) begin
-                        if (dcache_req) begin
+                        if (dcache_req_allowed) begin
                             curr_addr <= dcache_addr;
                             curr_wdata <= dcache_wdata;
                             curr_wstrb <= dcache_wstrb;
@@ -151,7 +170,7 @@ always @(posedge clk) begin
                                 app_en <= 1;
                                 state <= D_READ;
                             end
-                        end else if (icache_req) begin
+                        end else if (icache_req_allowed) begin
                             curr_addr <= icache_addr;
                             curr_target <= 2'd0;
                             app_addr <= icache_addr[ADDR_WIDTH-1:0];
@@ -160,14 +179,14 @@ always @(posedge clk) begin
                             state <= I_READ;
                         end
                     end else begin
-                        if (icache_req) begin
+                        if (icache_req_allowed) begin
                             curr_addr <= icache_addr;
                             curr_target <= 2'd0;
                             app_addr <= icache_addr[ADDR_WIDTH-1:0];
                             app_cmd <= CMD_READ;
                             app_en <= 1;
                             state <= I_READ;
-                        end else if (dcache_req) begin
+                        end else if (dcache_req_allowed) begin
                             curr_addr <= dcache_addr;
                             curr_wdata <= dcache_wdata;
                             curr_wstrb <= dcache_wstrb;
@@ -212,6 +231,7 @@ always @(posedge clk) begin
                 if ((!app_en || app_rdy) && (!app_wdf_wren || app_wdf_rdy)) begin
                     state <= IDLE;
                     dcache_ready <= 1;
+                    dcache_req_blocked <= 1'b1;
                     last_served <= 0;  // 写是 DCache 操作
                 end
             end
@@ -223,11 +243,13 @@ always @(posedge clk) begin
                     if (curr_target == 2'd0) begin
                         icache_rdata <= app_rd_data;
                         icache_ready <= 1;
+                        icache_req_blocked <= 1'b1;
                         last_served <= 1;  // 本次服务了 ICache
                         state <= IDLE;
                     end else if (curr_target == 2'd1) begin
                         dcache_rdata <= app_rd_data;
                         dcache_ready <= 1;
+                        dcache_req_blocked <= 1'b1;
                         last_served <= 0;  // 本次服务了 DCache
                         state <= IDLE;
                     end else begin

@@ -4,6 +4,16 @@ set mig_root [file join $ip_build mmu_ip_check.gen sources_1 ip mig_7series_0 mi
 set sim_dir [file join $mig_root example_design sim]
 set user_rtl_dir [file join $mig_root user_design rtl]
 set clk_wiz_dir [file join $ip_build mmu_ip_check.gen sources_1 ip clk_wiz_0]
+set stop_on_fault 0
+
+foreach arg $argv {
+    if {$arg eq "--stop_on_fault"} {
+        set stop_on_fault 1
+    } else {
+        puts "ERROR: unknown argument: $arg"
+        exit 1
+    }
+}
 
 if {![file exists $sim_dir]} {
     puts "ERROR: MIG/clock IP output products were not generated."
@@ -71,6 +81,8 @@ add_glob $fh [file join $user_rtl_dir phy *.v]
 add_glob $fh [file join $user_rtl_dir ui *.v]
 
 add_verilog $fh [file join $root src cpu utils regfile.v]
+add_verilog $fh [file join $root src cpu utils fregfile.v]
+add_sv $fh [file join $root src cpu utils fpu_single.v]
 add_verilog $fh [file join $root src cpu utils mul.v]
 add_verilog $fh [file join $root src cpu utils div.v]
 add_verilog $fh [file join $root src cpu utils imm_gen.v]
@@ -114,4 +126,9 @@ puts "Elaborating computer DDR3 Sv32 simulation..."
 puts [exec xelab work.tb_computer_ddr_sv32 work.glbl -prj $prj_file -L unisims_ver -L secureip -s xsim_computer_ddr_sv32 -debug typical --timescale 1ps/1ps --override_timeunit --override_timeprecision]
 
 puts "Running computer DDR3 Sv32 simulation..."
-puts [exec xsim xsim_computer_ddr_sv32 -tclbatch $batch_tcl]
+set xsim_cmd [list xsim xsim_computer_ddr_sv32]
+if {$stop_on_fault} {
+    lappend xsim_cmd -testplusarg STOP_ON_FAULT
+}
+lappend xsim_cmd -tclbatch $batch_tcl
+puts [exec {*}$xsim_cmd]

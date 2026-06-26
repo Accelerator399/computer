@@ -23,13 +23,15 @@ DTS, kernel configuration/loading, and storage/initramfs.
 
 | Area | File | Notes |
 | --- | --- | --- |
-| CPU core | `src/cpu/` | Local copy of the CPU, extended for MMU integration, traps, byte strobes, atomics, and parameterized reset. |
+| CPU core | `src/cpu/` | Local copy of the CPU, extended for MMU integration, traps, byte strobes, atomics, a single-precision FPU path, and parameterized reset. |
 | CSR/MMU connection | `src/cpu/csr.v`, `src/mmu/mmu.v` | CPU CSR writes to `satp` are forwarded to the MMU; `satp` writes and `SFENCE.VMA` flush stale TLB entries. |
 | Sv32 translation | `src/mmu/mmu.v`, `src/mmu/mmu_tlb.v` | TLB entries are filled from two-level Sv32 page tables through a hardware walker; 4 KiB pages and 4 MiB level-1 superpages are implemented; `SUM/MXR`, `U`, `X/R/W`, and `A/D` checks are honored. |
 | Page-fault trap path | `src/cpu/control.v`, `src/cpu/cpu.v` | Instruction/load/store page faults generate RISC-V causes 12/13/15 and set trap value. |
 | Privileged trap/return path | `src/cpu/control.v`, `src/cpu/csr.v` | `ecall`, `ebreak`, `mret`, `sret`, trap delegation, S-mode interrupt delivery, `FENCE.I`, `WFI`, and read-only identity CSRs are covered by directed tests. |
-| ISA target | `src/cpu/` | Practical software target is `rv32ima_zicsr_zifencei`; `misa` reports `0x4014_1101` (RV32 + A/I/M + S/U). Compressed (`C`) is not implemented. |
+| ISA target | `src/cpu/` | Baseline Linux software target remains `rv32ima_zicsr_zifencei` soft-float; hardware `misa` now reports `0x4014_1121` (RV32 + A/F/I/M + S/U). Compressed (`C`) is not implemented. |
+| RV32M divide | `src/cpu/utils/div.v` | Implements `DIV/DIVU/REM/REMU` with a handwritten multi-cycle restoring divider and a CPU `DIV_WAIT` state, including RISC-V divide-by-zero and signed-overflow behavior. |
 | RV32A atomics | `src/cpu/control.v`, `src/cpu/datapath.v` | Implements word LR/SC and AMO read-modify-write operations for early Linux atomic primitives. |
+| RV32F path | `src/cpu/utils/fpu_single.v`, `src/cpu/utils/fregfile.v` | Adds 32 floating-point registers, `FLW/FSW`, moves, sign injection, min/max, compare, classify, int/float conversion, `FADD.S`, `FSUB.S`, `FMUL.S`, `FDIV.S`, `FSQRT.S`, `fflags/frm/fcsr`, and `mstatus.FS` dirty tracking. The wrapper can instantiate Vivado Floating Point IP for add/sub/mul/div/sqrt. |
 | Byte stores | `src/cpu/datapath.v` | Store byte/half/word produce `mem_wstrb`, needed by caches, MMIO, and Linux-style drivers. |
 | CLINT | `src/io/clint.v` | Provides MSIP, `mtime`, and `mtimecmp`; timer/software interrupt outputs feed the CPU CSR interrupt path. |
 | PLIC | `src/io/plic.v`, `src/integration/computer_core.v` | Two-source PLIC-style external interrupt controller with priority, pending, enable, threshold, and claim/complete registers. Source ID 1 is external `ext_int`; source ID 2 is UART IRQ. M-mode and delegated S-mode external interrupt paths are tested. |
@@ -51,7 +53,9 @@ Core functional regressions:
 
 ```tcl
 vivado -mode batch -source script/run_smoke_xsim.tcl
+vivado -mode batch -source script/run_div_xsim.tcl
 vivado -mode batch -source script/run_misaligned_xsim.tcl
+vivado -mode batch -source script/run_fpu_xsim.tcl
 vivado -mode batch -source script/run_mmu_walker_xsim.tcl
 vivado -mode batch -source script/run_top_sim_sv32_xsim.tcl
 ```
@@ -60,7 +64,9 @@ Expected pass markers:
 
 ```text
 SMOKE PASS
+DIV CPU PASS
 MISALIGNED CPU PASS
+FPU CPU PASS
 MMU WALKER PASS
 TOP SIM SV32 PASS
 ```
@@ -149,6 +155,38 @@ I-cache, performs D-cache write-through/load/byte-store traffic through the real
 MIG app interface, and can run S-mode payloads with Sv32 page-table walks
 served by the same DDR path.
 
+Vivado Floating Point IP generation for the FPU wrapper:
+
+```tcl
+vivado -mode batch -source script/create_fpu_ip.tcl -tclargs --project_dir build/fpu_ip_check --project_name fpu_ip_check
+```
+
+This creates `fp_add_s`, `fp_sub_s`, `fp_mul_s`, `fp_div_s`, and `fp_sqrt_s`
+Floating Point IP cores.
+Compile `src/cpu/utils/fpu_single.v` with `USE_VIVADO_FPU_IP` and add the
+generated IP output products to a Vivado project to use the real IP path.  The
+default XSim smoke test uses a simulation fallback model so regular regressions
+do not require a generated IP project.
+
+DDR Linux-boot preload and firmware smoke tests:
+
+```tcl
+vivado -mode batch -source script/run_computer_ddr_linux_boot_xsim.tcl -tclargs --fwok_smoke
+vivado -mode batch -source script/run_computer_ddr_linux_boot_xsim.tcl -tclargs --linux_smoke
+```
+
+Expected pass markers:
+
+```text
+COMPUTER DDR OPENSBI-LITE UART PASS
+COMPUTER DDR LINUX BOOT PASS
+```
+
+`--fwok_smoke` proves that a preloaded DDR firmware image is fetched and
+executed.  `--linux_smoke` adds the OpenSBI-lite handoff into an S-mode payload
+at `0x00400000`, checks the DTB argument at `0x00800000`, and emits the same
+banner that the first initramfs `/init` will later print.
+
 ## Memory Integration Options
 
 `computer_core` is intentionally memory-implementation neutral.  It exposes two
@@ -221,7 +259,7 @@ move to firmware, DTS, kernel, and image-loading work.
 | --- | --- |
 | Sv32 MMU | Hardware page-table walker fills TLBs from memory PTEs; 4 KiB pages and 4 MiB superpages are implemented; `satp` writes and `SFENCE.VMA` flush globally; permission checks cover `X/R/W/U/SUM/MXR/A/D`. Hardware does not write back `A/D`; keep a software-managed A/D trap path or add hardware writeback later. |
 | Privileged ISA | M/S-mode CSR base, trap delegation, S-mode external interrupt delivery, `ecall/ebreak`, `mret/sret`, page-fault trap values, identity CSRs, `FENCE.I`, and NOP-style `WFI` are wired and tested. Remaining hardening includes WARL details, vectored trap mode, and broader conformance tests. |
-| ISA extensions | CPU supports the practical target `rv32ima_zicsr_zifencei`; `misa=0x4014_1101`. Compressed (`C`) is absent, so Linux and firmware must be built without `C`. |
+| ISA extensions | CPU supports `rv32ima_zicsr_zifencei` plus most scalar RV32F single-precision operations; `misa=0x4014_1121`. Compressed (`C`) is absent. The first Linux target should still use soft-float until FMA/rounding-mode details, precise exception flags, and OS FPU context handling are completed. |
 | Timer/interrupts | CLINT-style software/timer interrupts and a two-source PLIC are integrated. Source 1 is external `ext_int`; source 2 is UART IRQ. Both M-mode and delegated S-mode external interrupt paths have regressions. |
 | Main memory | DDR3/MIG full-computer simulations pass in bare mode and Sv32 S-mode; page-table walks, instruction fetch, D-cache load/store, and byte stores all traverse the real MIG app interface in simulation. |
 | Boot flow | Reset vector is parameterized, optional boot ROM exists, and a tiny M-mode firmware handoff into S-mode is tested. Remaining work is to load a real OpenSBI/OpenSBI-lite payload and kernel image. |
@@ -242,7 +280,9 @@ src/
   tb/                   smoke and directed hardware testbenches
 script/
   run_smoke_xsim.tcl
+  run_div_xsim.tcl
   run_misaligned_xsim.tcl
+  run_fpu_xsim.tcl
   run_mmu_walker_xsim.tcl
   run_top_sim_sv32_xsim.tcl
   run_privileged_xsim.tcl
@@ -257,6 +297,7 @@ script/
   run_mig_example_xsim.tcl
   run_computer_ddr_xsim.tcl
   run_computer_ddr_sv32_xsim.tcl
+  create_fpu_ip.tcl
 docs/
   linux_porting_roadmap.md
 ```

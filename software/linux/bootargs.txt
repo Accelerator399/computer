@@ -1,0 +1,1 @@
+earlycon=uart8250,mmio32,0x10010000,115200n8 console=ttyS0,115200n8 rdinit=/init loglevel=8 ignore_loglevel

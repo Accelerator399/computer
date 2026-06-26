@@ -298,7 +298,7 @@ initial begin
     check_reg(5'd8, 32'h0000_0044, "mret entered S-mode payload");
     check_reg(5'd9, 32'h0000_0055, "S ecall handler executed");
     check_reg(5'd10, 32'h0000_0066, "sret returned to the S-mode payload");
-    check_reg(5'd11, 32'h4014_1101, "misa reports RV32 IMA plus S/U privilege support");
+    check_reg(5'd11, 32'h4014_1121, "misa reports RV32 IMAF plus S/U privilege support");
     check_reg(5'd12, 32'h0000_0000, "mvendorid is readable");
     check_reg(5'd13, 32'h0000_0001, "marchid is readable");
     check_reg(5'd14, 32'h0000_0001, "mimpid is readable");

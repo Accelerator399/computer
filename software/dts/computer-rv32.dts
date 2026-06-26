@@ -1,0 +1,81 @@
+/dts-v1/;
+
+/ {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    compatible = "local,computer-rv32";
+    model = "Local RV32IMA Computer";
+
+    aliases {
+        serial0 = &uart0;
+    };
+
+    chosen {
+        stdout-path = "serial0:115200n8";
+        bootargs = "earlycon=uart8250,mmio32,0x10010000,115200n8 console=ttyS0,115200n8 rdinit=/init loglevel=8 ignore_loglevel";
+    };
+
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        timebase-frequency = <100000000>;
+
+        cpu0: cpu@0 {
+            device_type = "cpu";
+            reg = <0>;
+            compatible = "riscv";
+            riscv,isa = "rv32ima_zicsr_zifencei";
+            mmu-type = "riscv,sv32";
+
+            cpu0_intc: interrupt-controller {
+                compatible = "riscv,cpu-intc";
+                interrupt-controller;
+                #address-cells = <0>;
+                #interrupt-cells = <1>;
+            };
+        };
+    };
+
+    memory@0 {
+        device_type = "memory";
+        reg = <0x00000000 0x08000000>;
+    };
+
+    soc {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "simple-bus";
+        ranges;
+
+        clint: timer@10000000 {
+            compatible = "riscv,clint0";
+            reg = <0x10000000 0x10000>;
+            interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>;
+        };
+
+        uart0: serial@10010000 {
+            compatible = "ns16550a";
+            reg = <0x10010000 0x100>;
+            reg-shift = <2>;
+            reg-io-width = <4>;
+            clock-frequency = <100000000>;
+            interrupt-parent = <&plic>;
+            interrupts = <2>;
+        };
+
+        gpio0: gpio@10020000 {
+            compatible = "local,gpio";
+            reg = <0x10020000 0x10>;
+        };
+
+        plic: interrupt-controller@10030000 {
+            compatible = "sifive,plic-1.0.0", "riscv,plic0";
+            reg = <0x10030000 0x400000>;
+            interrupt-controller;
+            #address-cells = <0>;
+            #interrupt-cells = <1>;
+            riscv,ndev = <2>;
+            interrupts-extended = <&cpu0_intc 9>;
+        };
+    };
+};

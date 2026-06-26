@@ -71,6 +71,8 @@ add_glob $fh [file join $user_rtl_dir phy *.v]
 add_glob $fh [file join $user_rtl_dir ui *.v]
 
 add_verilog $fh [file join $root src cpu utils regfile.v]
+add_verilog $fh [file join $root src cpu utils fregfile.v]
+add_sv $fh [file join $root src cpu utils fpu_single.v]
 add_verilog $fh [file join $root src cpu utils mul.v]
 add_verilog $fh [file join $root src cpu utils div.v]
 add_verilog $fh [file join $root src cpu utils imm_gen.v]

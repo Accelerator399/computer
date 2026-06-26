@@ -19,6 +19,7 @@ module csr(
     input [31:0] trap_value,
     input mret,
     input sret,
+    input fp_dirty,
 
     input ext_int,
     input timer_int,
@@ -43,6 +44,8 @@ reg [31:0] mie_reg;
 reg [31:0] mip_sw_reg;
 reg [31:0] mideleg_reg;
 reg [31:0] medeleg_reg;
+reg [4:0] fflags_reg;
+reg [2:0] frm_reg;
 
 reg [31:0] stvec_reg;
 reg [31:0] sepc_reg;
@@ -53,7 +56,7 @@ reg [31:0] sscratch_reg;
 reg [1:0] privilege_mode;
 
 wire [31:0] mip;
-wire [31:0] misa_value = 32'h4014_1101; // RV32 + IMA + user/supervisor support.
+wire [31:0] misa_value = 32'h4014_1121; // RV32 + F/I/M/A + user/supervisor support.
 wire [31:0] mvendorid_value = 32'h0000_0000;
 wire [31:0] marchid_value = 32'h0000_0001;
 wire [31:0] mimpid_value = 32'h0000_0001;
@@ -64,6 +67,7 @@ wire [31:0] sie_mask=32'h0000_0222;
 wire [31:0] sstatus=mstatus_reg&sstatus_mask;
 wire [31:0] sie=mie_reg&sie_mask;
 wire [31:0] sip=mip&sie_mask;
+wire [31:0] fcsr={24'b0,frm_reg,fflags_reg};
 
 wire external_csr_sel=(csr_addr==12'h180); // satp is owned by the MMU.
 
@@ -78,7 +82,10 @@ assign mip={20'b0,
             soft_pending & !soft_to_s, 1'b0, soft_pending & soft_to_s, 1'b0};
 
 wire [31:0] csr_cur;
-assign csr_cur= (csr_addr==12'h300)? mstatus_reg:
+assign csr_cur= (csr_addr==12'h001)? {27'b0,fflags_reg}:
+                (csr_addr==12'h002)? {29'b0,frm_reg}:
+                (csr_addr==12'h003)? fcsr:
+                (csr_addr==12'h300)? mstatus_reg:
                 (csr_addr==12'h301)? misa_value:
                 (csr_addr==12'h302)? medeleg_reg:
                 (csr_addr==12'h303)? mideleg_reg:
@@ -112,6 +119,9 @@ assign csr_reg= (csr_op==2'b00)? csr_wdata:
 
 always @(*) begin
     case(csr_addr)
+        12'h001: csr_rdata={27'b0,fflags_reg};
+        12'h002: csr_rdata={29'b0,frm_reg};
+        12'h003: csr_rdata=fcsr;
         12'h300: csr_rdata=mstatus_reg;
         12'h301: csr_rdata=misa_value;
         12'h302: csr_rdata=medeleg_reg;
@@ -156,6 +166,8 @@ always @(posedge clk) begin
         mip_sw_reg<=32'b0;
         mideleg_reg<=32'b0;
         medeleg_reg<=32'b0;
+        fflags_reg<=5'b0;
+        frm_reg<=3'b0;
 
         stvec_reg<=32'b0;
         sepc_reg<=32'b0;
@@ -194,6 +206,12 @@ always @(posedge clk) begin
         mstatus_reg[5]<=1'b1;
     end else if(csr_we) begin
         case(csr_addr)
+            12'h001: fflags_reg<=csr_reg[4:0];
+            12'h002: frm_reg<=csr_reg[2:0];
+            12'h003: begin
+                fflags_reg<=csr_reg[4:0];
+                frm_reg<=csr_reg[7:5];
+            end
             12'h300: mstatus_reg<=csr_reg;
             12'h302: medeleg_reg<=csr_reg;
             12'h303: mideleg_reg<=csr_reg;
@@ -216,6 +234,8 @@ always @(posedge clk) begin
             12'h143: stval_reg<=csr_reg;
             12'h144: mip_sw_reg[1]<=csr_reg[1];
         endcase
+    end else if(fp_dirty) begin
+        mstatus_reg[14:13]<=2'b11;
     end
 end
 

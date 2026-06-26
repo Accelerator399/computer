@@ -227,7 +227,7 @@ initial begin
 
     check(pc == 32'h0000_0154, "firmware handoff reaches the S-mode final spin");
     check(privilege_mode == 2'b01, "firmware handoff leaves the CPU in S-mode");
-    check_reg(5'd5, 32'h4014_1101, "firmware reads misa before handoff");
+    check_reg(5'd5, 32'h4014_1121, "firmware reads RV32IMAF misa before handoff");
     check_reg(5'd6, 32'h0000_0123, "S-mode payload executed after mret");
     check_reg(5'd7, 32'h0000_0456, "S-mode payload continued after WFI");
     check(saw_sfence, "S-mode payload executed sfence.vma");

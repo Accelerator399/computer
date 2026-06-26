@@ -3,6 +3,8 @@ cd $root
 
 set srcs {
     src/cpu/utils/regfile.v
+    src/cpu/utils/fregfile.v
+    src/cpu/utils/fpu_single.v
     src/cpu/utils/mul.v
     src/cpu/utils/div.v
     src/cpu/utils/imm_gen.v

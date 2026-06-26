@@ -19,6 +19,8 @@ module control(
     input [31:0] mip,
     input [1:0] privilege,
     input amo_sc_success,
+    input div_ready,
+    input fpu_ready,
     output reg pc_write,
     output reg [1:0] pc_src,
     output reg ir_write,
@@ -48,24 +50,30 @@ module control(
     output reg amo_reservation_set,
     output reg amo_reservation_clear,
     output reg amo_wdata_sel,
+    output reg f_reg_write,
+    output reg [1:0] f_wb_src,
+    output reg div_start,
+    output reg fpu_start,
     output reg trap_pc_src,
     output [2:0] state_out
 );
 
-parameter IF=3'd0;
-parameter ID=3'd1;
-parameter EX=3'd2;
-parameter MEM=3'd3;
-parameter WB=3'd4;
-parameter TRAP=3'd5;
-parameter AMO_CALC=3'd6;
-parameter AMO_WRITE=3'd7;
+parameter IF=4'd0;
+parameter ID=4'd1;
+parameter EX=4'd2;
+parameter MEM=4'd3;
+parameter WB=4'd4;
+parameter TRAP=4'd5;
+parameter AMO_CALC=4'd6;
+parameter AMO_WRITE=4'd7;
+parameter FPU_WAIT=4'd8;
+parameter DIV_WAIT=4'd9;
 
-reg [2:0] next_state;
-reg [2:0] state;
+reg [3:0] next_state;
+reg [3:0] state;
 reg [31:0] trap_cause_reg;
 
-assign state_out=state;
+assign state_out=((state==FPU_WAIT)||(state==DIV_WAIT))? 3'd2:state[2:0];
 
 wire is_system_inst;
 wire is_priv_inst;
@@ -81,6 +89,35 @@ wire legal_amo_inst;
 wire is_lr_w;
 wire is_sc_w;
 wire [4:0] amo_funct5;
+wire is_fp_load;
+wire is_fp_store;
+wire is_fp_op;
+wire is_fadd_s;
+wire is_fsub_s;
+wire is_fmul_s;
+wire is_fdiv_s;
+wire is_fsqrt_s;
+wire is_fsgnj_s;
+wire is_fsgnjn_s;
+wire is_fsgnjx_s;
+wire is_fmin_s;
+wire is_fmax_s;
+wire is_feq_s;
+wire is_flt_s;
+wire is_fle_s;
+wire is_fclass_s;
+wire is_fcvt_w_s;
+wire is_fcvt_wu_s;
+wire is_fcvt_s_w;
+wire is_fcvt_s_wu;
+wire is_fmv_x_w;
+wire is_fmv_w_x;
+wire is_fp_ip_op;
+wire is_fp_to_int;
+wire is_fp_to_freg;
+wire legal_fp_inst;
+wire is_m_ext;
+wire is_div_inst;
 
 assign is_system_inst=(opcode==7'b1110011);
 assign is_priv_inst=is_system_inst&&(funct3==3'b000);
@@ -108,6 +145,37 @@ assign legal_amo_inst=is_amo_inst&&
      amo_funct5==5'b10100||amo_funct5==5'b11000||
      amo_funct5==5'b11100);
 
+assign is_fp_load=(opcode==7'b0000111)&&(funct3==3'b010);
+assign is_fp_store=(opcode==7'b0100111)&&(funct3==3'b010);
+assign is_fp_op=(opcode==7'b1010011);
+assign is_fadd_s=is_fp_op&&(funct7==7'b0000000);
+assign is_fsub_s=is_fp_op&&(funct7==7'b0000100);
+assign is_fmul_s=is_fp_op&&(funct7==7'b0001000);
+assign is_fdiv_s=is_fp_op&&(funct7==7'b0001100);
+assign is_fsqrt_s=is_fp_op&&(funct7==7'b0101100)&&(funct12[4:0]==5'd0);
+assign is_fsgnj_s=is_fp_op&&(funct7==7'b0010000)&&(funct3==3'b000);
+assign is_fsgnjn_s=is_fp_op&&(funct7==7'b0010000)&&(funct3==3'b001);
+assign is_fsgnjx_s=is_fp_op&&(funct7==7'b0010000)&&(funct3==3'b010);
+assign is_fmin_s=is_fp_op&&(funct7==7'b0010100)&&(funct3==3'b000);
+assign is_fmax_s=is_fp_op&&(funct7==7'b0010100)&&(funct3==3'b001);
+assign is_fle_s=is_fp_op&&(funct7==7'b1010000)&&(funct3==3'b000);
+assign is_flt_s=is_fp_op&&(funct7==7'b1010000)&&(funct3==3'b001);
+assign is_feq_s=is_fp_op&&(funct7==7'b1010000)&&(funct3==3'b010);
+assign is_fcvt_w_s=is_fp_op&&(funct7==7'b1100000)&&(funct12[4:0]==5'd0);
+assign is_fcvt_wu_s=is_fp_op&&(funct7==7'b1100000)&&(funct12[4:0]==5'd1);
+assign is_fcvt_s_w=is_fp_op&&(funct7==7'b1101000)&&(funct12[4:0]==5'd0);
+assign is_fcvt_s_wu=is_fp_op&&(funct7==7'b1101000)&&(funct12[4:0]==5'd1);
+assign is_fmv_x_w=is_fp_op&&(funct7==7'b1110000)&&(funct3==3'b000)&&(funct12[4:0]==5'd0);
+assign is_fclass_s=is_fp_op&&(funct7==7'b1110000)&&(funct3==3'b001)&&(funct12[4:0]==5'd0);
+assign is_fmv_w_x=is_fp_op&&(funct7==7'b1111000)&&(funct3==3'b000)&&(funct12[4:0]==5'd0);
+assign is_fp_ip_op=is_fadd_s||is_fsub_s||is_fmul_s||is_fdiv_s||is_fsqrt_s;
+assign is_fp_to_int=is_fmv_x_w||is_feq_s||is_flt_s||is_fle_s||is_fclass_s||is_fcvt_w_s||is_fcvt_wu_s;
+assign is_fp_to_freg=is_fp_ip_op||is_fsgnj_s||is_fsgnjn_s||is_fsgnjx_s||
+                     is_fmin_s||is_fmax_s||is_fmv_w_x||is_fcvt_s_w||is_fcvt_s_wu;
+assign legal_fp_inst=is_fp_load||is_fp_store||is_fp_to_int||is_fp_to_freg;
+assign is_m_ext=(opcode==7'b0110011)&&(funct7==7'b0000001);
+assign is_div_inst=is_m_ext&&funct3[2];
+
 assign illegal_inst=(state==ID)&&
     !(opcode==7'b0110011||opcode==7'b0010011||
       opcode==7'b0000011||opcode==7'b0100011||
@@ -115,7 +183,8 @@ assign illegal_inst=(state==ID)&&
       opcode==7'b1100111||opcode==7'b0110111||
       opcode==7'b0010111||(is_system_inst&&legal_system_inst)||
       is_fence_inst||
-      legal_amo_inst);
+      legal_amo_inst||
+      legal_fp_inst);
 
 wire [31:0] interrupt_cause = mip[11] ? 32'h8000000B :
                               mip[9]  ? 32'h80000009 :
@@ -127,14 +196,14 @@ wire [31:0] interrupt_cause = mip[11] ? 32'h8000000B :
 wire [31:0] ecall_cause = (privilege==2'b00) ? 32'd8 :
                           (privilege==2'b01) ? 32'd9 :
                                                 32'd11;
-wire [31:0] d_misaligned_cause = ((opcode==7'b0000011)||is_lr_w) ? 32'd4 : 32'd6;
+wire [31:0] d_misaligned_cause = ((opcode==7'b0000011)||is_fp_load||is_lr_w) ? 32'd4 : 32'd6;
 wire [31:0] trap_cause_next =
     (i_addr_misaligned && state==EX) ? 32'd0 :
     (d_addr_misaligned && (state==MEM || state==AMO_CALC || state==AMO_WRITE)) ?
                                   d_misaligned_cause :
     (i_page_fault && state==IF)  ? 32'd12 :
     (d_page_fault && (state==MEM || state==AMO_WRITE)) ?
-                                  (((opcode==7'b0100011) || state==AMO_WRITE) ? 32'd15 : 32'd13) :
+                                  (((opcode==7'b0100011) || is_fp_store || state==AMO_WRITE) ? 32'd15 : 32'd13) :
     (int_pending && state==IF)   ? interrupt_cause :
     is_ecall                     ? ecall_cause :
     is_ebreak                    ? 32'd3 :
@@ -172,9 +241,13 @@ always @(*) begin
             end
             EX:begin
                 case(opcode)
+                    7'b0110011:next_state=is_div_inst ? DIV_WAIT : WB;
                     7'b0000011:next_state=MEM; // Load
+                    7'b0000111:next_state=MEM; // FLW
                     7'b0100011:next_state=MEM; // Store
+                    7'b0100111:next_state=MEM; // FSW
                     7'b0101111:next_state=is_sc_w ? AMO_CALC : MEM; // Atomic
+                    7'b1010011:next_state=is_fp_ip_op ? FPU_WAIT : WB;
                     7'b0001111:next_state=IF;  // FENCE/FENCE.I
                     7'b1100011:next_state=IF;  // Branch不写回
                     7'b1101111:next_state=IF;  // JAL需要写回但PC已更新
@@ -195,7 +268,7 @@ always @(*) begin
                     next_state=TRAP;
                 else if(dcache_hit) begin
                     case(opcode)
-                        7'b0100011:next_state=IF; // Store不写回
+                        7'b0100011,7'b0100111:next_state=IF; // Store/FSW不写回
                         7'b0101111:next_state=AMO_CALC;
                         default:next_state=WB;
                     endcase
@@ -219,6 +292,12 @@ always @(*) begin
                     next_state=TRAP;
                 else
                     next_state=dcache_hit ? WB : AMO_WRITE;
+            end
+            FPU_WAIT:begin
+                next_state=fpu_ready ? WB : FPU_WAIT;
+            end
+            DIV_WAIT:begin
+                next_state=div_ready ? WB : DIV_WAIT;
             end
             WB:next_state=IF;
             TRAP:next_state=IF;
@@ -258,6 +337,10 @@ always @(*) begin
     amo_reservation_set=1'b0;
     amo_reservation_clear=1'b0;
     amo_wdata_sel=1'b0;
+    f_reg_write=1'b0;
+    f_wb_src=2'b00;
+    div_start=1'b0;
+    fpu_start=1'b0;
     trap_pc_src=1'b0;
 
     case(state)
@@ -274,6 +357,7 @@ always @(*) begin
             case(opcode)
                 7'b0110011:begin // R型
                     if(funct7==7'b0000001) begin // M扩展
+                        div_start=is_div_inst;
                         case(funct3)
                             3'b000:begin // MUL
                                 mul_a_signed=1'b1;
@@ -327,6 +411,16 @@ always @(*) begin
                     alu_op=2'b00; // ADD计算地址
                 end
                 7'b0100011:begin // Store
+                    alu_src_a=1'b0;
+                    alu_src_b=2'b01;
+                    alu_op=2'b00; // ADD计算地址
+                end
+                7'b0000111:begin // FLW
+                    alu_src_a=1'b0;
+                    alu_src_b=2'b01;
+                    alu_op=2'b00; // ADD计算地址
+                end
+                7'b0100111:begin // FSW
                     alu_src_a=1'b0;
                     alu_src_b=2'b01;
                     alu_op=2'b00; // ADD计算地址
@@ -424,6 +518,9 @@ always @(*) begin
                         pc_src=2'b00; // WFI acts as a conservative NOP for now.
                     end
                 end
+                7'b1010011:begin // RV32F register-register and move subset
+                    fpu_start=is_fp_ip_op;
+                end
                 default:begin
                 end
             endcase
@@ -431,7 +528,7 @@ always @(*) begin
 
         MEM:begin
             case(opcode)
-                7'b0100011:begin // Store
+                7'b0100011,7'b0100111:begin // Store/FSW
                     mem_write=!d_addr_misaligned;
                     amo_reservation_clear=!d_addr_misaligned;
                     if(dcache_hit && !d_page_fault) begin
@@ -453,6 +550,15 @@ always @(*) begin
             mem_write=!d_addr_misaligned;
             amo_wdata_sel=1'b1;
             amo_reservation_clear=!d_addr_misaligned;
+                end
+
+        DIV_WAIT:begin
+            case(funct3)
+                3'b100:begin div_is_signed=1'b1; md_sel=2'b01; end
+                3'b101:begin md_sel=2'b01; end
+                3'b110:begin div_is_signed=1'b1; md_sel=2'b10; end
+                3'b111:begin md_sel=2'b10; end
+            endcase
         end
 
         WB:begin
@@ -461,6 +567,11 @@ always @(*) begin
             pc_src=2'b00; // PC+4
             case(opcode)
                 7'b0000011:wb_src=3'b001; // Load: mdr
+                7'b0000111:begin // FLW
+                    reg_write=1'b0;
+                    f_reg_write=1'b1;
+                    f_wb_src=2'b01;
+                end
                 7'b0101111:begin
                     wb_src=3'b110; // Atomic old value or SC status
                     if(is_lr_w)
@@ -496,6 +607,17 @@ always @(*) begin
                     end else begin
                         reg_write=1'b0;
                         wb_src=3'b000;
+                    end
+                end
+                7'b1010011:begin // RV32F subset
+                    if(is_fp_to_int) begin
+                        reg_write=1'b1;
+                        wb_src=3'b111;
+                    end else begin
+                        reg_write=1'b0;
+                        f_reg_write=1'b1;
+                        f_wb_src=is_fmv_w_x ? 2'b10 :
+                                 (is_fp_ip_op ? 2'b00 : 2'b11);
                     end
                 end
                 default:wb_src=3'b000;    // alu_out

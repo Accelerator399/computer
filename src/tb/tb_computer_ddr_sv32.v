@@ -129,6 +129,8 @@ wire [31:0] pad;
 
 reg saw_i_page_fault;
 reg saw_d_page_fault;
+reg first_page_fault_seen;
+reg stop_on_fault;
 integer errors;
 
 clk_wiz_0 u_clk_wiz (
@@ -406,7 +408,41 @@ always @(posedge ui_clk) begin
     if(computer_rst) begin
         saw_i_page_fault <= 1'b0;
         saw_d_page_fault <= 1'b0;
+        first_page_fault_seen <= 1'b0;
     end else begin
+        if((i_page_fault_out || d_page_fault_out) && !first_page_fault_seen) begin
+            first_page_fault_seen <= 1'b1;
+            $display("DEBUG: first page fault kind=%0s time=%0t pc=%08h inst=%08h state=%0d priv=%0d satp=%08h mem_va=%08h i_pa=%08h d_pa=%08h",
+                     i_page_fault_out ? "I" : "D", $time, pc_out, inst_out, state,
+                     privilege_out, satp_out, mem_addr_out, i_paddr_out, d_paddr_out);
+            $display("DEBUG: mmu walk_state=%0d walk_is_data=%b walk_vaddr=%08h walk_fault=%b l1_pte=%08h l0_pte=%08h walker_addr=%08h walker_req=%b walker_ready=%b walker_pte=%08h",
+                     u_computer.u_core.u_mmu.walk_state,
+                     u_computer.u_core.u_mmu.walk_is_data,
+                     u_computer.u_core.u_mmu.walk_vaddr,
+                     u_computer.u_core.u_mmu.walk_fault,
+                     u_computer.u_core.u_mmu.l1_pte,
+                     u_computer.u_core.u_mmu.l0_pte,
+                     u_computer.u_core.walker_mem_addr,
+                     u_computer.u_core.walker_mem_req,
+                     u_computer.u_core.walker_mem_ready,
+                     u_computer.u_core.u_mmu.walker_mem_rdata);
+            $display("DEBUG: adapter state=%0d curr_target=%0d curr_addr=%08h walker_pending=%b pending_addr=%08h app_addr=%08h app_en=%b app_cmd=%0d app_rdy=%b rd_valid=%b rd_data=%032h",
+                     u_computer.u_ddr_adapter.state,
+                     u_computer.u_ddr_adapter.curr_target,
+                     u_computer.u_ddr_adapter.curr_addr,
+                     u_computer.u_ddr_adapter.walker_pending,
+                     u_computer.u_ddr_adapter.walker_pending_addr,
+                     app_addr,
+                     app_en,
+                     app_cmd,
+                     app_rdy,
+                     app_rd_data_valid,
+                     app_rd_data);
+            if(stop_on_fault) begin
+                $display("DEBUG: stopping on first page fault due to +STOP_ON_FAULT");
+                $finish;
+            end
+        end
         if(i_page_fault_out)
             saw_i_page_fault <= 1'b1;
         if(d_page_fault_out)
@@ -642,6 +678,7 @@ end
 
 initial begin
     errors = 0;
+    stop_on_fault = $test$plusargs("STOP_ON_FAULT");
     test_addr = 5'd0;
     tb_master_active = 1'b1;
     cpu_released = 1'b0;

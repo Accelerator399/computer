@@ -42,7 +42,9 @@ device tree.
 
 | Requirement | Status |
 | --- | --- |
-| ISA target | Practical target is `rv32ima_zicsr_zifencei`. `misa` reports `0x4014_1101` for RV32 + A/I/M + S/U. Compressed (`C`) is not implemented. |
+| ISA target | Baseline Linux target is still `rv32ima_zicsr_zifencei` soft-float. Hardware `misa` reports `0x4014_1121` for RV32 + A/F/I/M + S/U. Compressed (`C`) is not implemented. |
+| RV32M divider | `DIV/DIVU/REM/REMU` use a handwritten multi-cycle restoring divider behind the CPU `DIV_WAIT` state, including RISC-V divide-by-zero and signed-overflow behavior. |
+| RV32F FPU | Single-precision hardware path is present for `FLW/FSW`, moves, sign injection, min/max, compare, classify, int/float conversion, `FADD.S`, `FSUB.S`, `FMUL.S`, `FDIV.S`, and `FSQRT.S`, with `fflags/frm/fcsr` CSRs and `mstatus.FS` dirty tracking. Vivado Floating Point IP generation is scripted by `script/create_fpu_ip.tcl`. |
 | Sv32 translation | Hardware walker fills TLBs from memory page tables. 4 KiB pages and 4 MiB level-1 superpages are implemented. `satp` writes and `SFENCE.VMA` flush globally. `X/R/W/U/SUM/MXR/A/D` checks are implemented. |
 | Accessed/dirty policy | Software-managed. The walker faults when `A=0`, or when a store sees `D=0`; it does not write PTE `A/D` bits back to memory. Linux firmware/kernel work must handle these faults or the RTL can later grow hardware `A/D` writeback. |
 | Privileged ISA | M/S-mode CSR base, trap delegation, S-mode external interrupt delivery, `ecall/ebreak`, `mret/sret`, page-fault trap values, identity CSRs, `FENCE.I`, and NOP-style `WFI` are wired and tested. |
@@ -177,6 +179,7 @@ XLEN=32
 ISA=rv32ima_zicsr_zifencei
 MMU=Sv32
 No compressed instruction requirement
+Soft-float for the first Linux boot
 Early console through ns16550a/8250
 Rootfs through initramfs first
 ```
@@ -187,6 +190,7 @@ Important software assumptions:
 | --- | --- |
 | Console | `earlycon=uart8250,mmio32,0x10010000,115200n8` or equivalent DTS-driven 8250 console. |
 | Root filesystem | Initramfs until a block/storage device is added. |
+| Floating point | Keep `CONFIG_FPU=n` and use soft-float for the first Linux image. The RTL now covers most scalar RV32F operations, but a hard-float Linux target still needs FMA/rounding-mode hardening, precise exception flag plumbing, and broader FPU context-switch validation. |
 | PTE `A/D` | Use a software-managed accessed/dirty fault path, or add RTL writeback before relying on hardware-managed `A/D`. |
 | Timer | Use CLINT `mtime/mtimecmp`; verify the `timebase-frequency` value against the real clock. |
 | Interrupt controller | Start with the simple PLIC map above; harden multi-context behavior later if mainline drivers need stricter behavior. |
@@ -198,7 +202,9 @@ These regressions are the current hardware readiness gate:
 | Command | Pass marker | What it proves |
 | --- | --- | --- |
 | `vivado -mode batch -source script/run_smoke_xsim.tcl` | `SMOKE PASS` | CPU, cache path, load/store, byte strobes against simulation RAM. |
+| `vivado -mode batch -source script/run_div_xsim.tcl` | `DIV CPU PASS` | Handwritten RV32M `DIV/DIVU/REM/REMU` behavior, including signed truncation, divide-by-zero, and signed-overflow cases. |
 | `vivado -mode batch -source script/run_misaligned_xsim.tcl` | `MISALIGNED CPU PASS` | Misaligned trap behavior. |
+| `vivado -mode batch -source script/run_fpu_xsim.tcl` | `FPU CPU PASS` | RV32F register file, `FLW/FSW`, moves, sign injection, min/max, compare, classify, conversions, add/sub/mul/div/sqrt, `misa.F`, and `fcsr` smoke coverage. |
 | `vivado -mode batch -source script/run_mmu_walker_xsim.tcl` | `MMU WALKER PASS` | Sv32 page-table walk, TLB fill/refill, superpage, permission faults, `satp`, and `SFENCE.VMA`. |
 | `vivado -mode batch -source script/run_top_sim_sv32_xsim.tcl` | `TOP SIM SV32 PASS` | Integrated top-level Sv32 execution against simulation RAM. |
 | `vivado -mode batch -source script/run_privileged_xsim.tcl` | `PRIVILEGED CPU PASS` | M/S CSR behavior, delegation, `mret`, `sret`, `FENCE.I`, `WFI`, identity CSRs. |
@@ -213,6 +219,8 @@ These regressions are the current hardware readiness gate:
 | `vivado -mode batch -source script/run_mig_example_xsim.tcl` | `TEST PASSED` | Generated MIG/DDR3 IP example design and DDR3 model. |
 | `vivado -mode batch -source script/run_computer_ddr_xsim.tcl` | `COMPUTER DDR SMOKE PASS` | Full computer bare-mode instruction fetch and data traffic through real MIG app interface. |
 | `vivado -mode batch -source script/run_computer_ddr_sv32_xsim.tcl` | `COMPUTER DDR SV32 PASS` | Full computer S-mode Sv32 execution, DDR-backed page-table walks, 4 MiB superpage load, 4 KiB page store/load, and DDR readback. |
+| `vivado -mode batch -source script/run_computer_ddr_linux_boot_xsim.tcl -tclargs --fwok_smoke` | `COMPUTER DDR OPENSBI-LITE UART PASS` | DDR preload through MIG, CPU reset release, and first firmware MMIO output from DDR-resident code. |
+| `vivado -mode batch -source script/run_computer_ddr_linux_boot_xsim.tcl -tclargs --linux_smoke` | `COMPUTER DDR LINUX BOOT PASS` | OpenSBI-lite starts from DDR, passes `a0/a1`, enters an S-mode payload at the Linux entry address, and emits the first Linux banner marker. |
 
 ## 7. Residual Hardware Hardening
 
@@ -226,6 +234,7 @@ Linux software port:
 | CSR WARL behavior | Harden reserved/unsupported CSR fields against privileged architecture conformance tests. |
 | Trap vectors | Direct mode is enough for bring-up; vectored mode can be added later. |
 | Cache model | Document and stress-test the cache maintenance/coherency contract before adding DMA-capable devices. |
+| Full Linux FPU enablement | Add FMA or mask the extension contract accordingly, harden rounding-mode behavior, wire precise IP exception flags into `fflags`, and validate lazy/eager FPU context management before enabling `CONFIG_FPU=y` or hard-float userspace. |
 | PTE `A/D` writeback | Optional hardware improvement; current software-managed policy is clear and testable. |
 | Storage | Add SPI/SD/block storage when moving beyond initramfs. |
 
@@ -240,7 +249,10 @@ COMPUTER S-MODE PLIC IRQ PASS
 FIRMWARE BOOT PASS
 COMPUTER DDR SMOKE PASS
 COMPUTER DDR SV32 PASS
+COMPUTER DDR OPENSBI-LITE UART PASS
+FPU CPU PASS
 ```
 
-The next concrete deliverable should be a firmware plus DTS package that boots a
-small RV32IMA Linux image to early console output.
+The next concrete deliverable should be a real RV32IMA soft-float Linux `Image` plus
+initramfs/rootfs bundle.  The firmware, DTS, DDR preload format, FWOK smoke,
+and S-mode Linux banner smoke are now in place for that handoff.

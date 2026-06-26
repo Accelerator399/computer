@@ -79,6 +79,12 @@ wire amo_reservation_set;
 wire amo_reservation_clear;
 wire amo_wdata_sel;
 wire amo_sc_success;
+wire f_reg_write;
+wire [1:0] f_wb_src;
+wire div_start;
+wire div_ready;
+wire fpu_start;
+wire fpu_ready;
 
 wire [31:0] ret_epc;
 wire [31:0] trap_vec;
@@ -117,6 +123,8 @@ control ct(
     .mip(mip),
     .privilege(privilege),
     .amo_sc_success(amo_sc_success),
+    .div_ready(div_ready),
+    .fpu_ready(fpu_ready),
     .pc_write(pc_write),
     .pc_src(pc_src),
     .ir_write(ir_write),
@@ -146,6 +154,10 @@ control ct(
     .amo_reservation_set(amo_reservation_set),
     .amo_reservation_clear(amo_reservation_clear),
     .amo_wdata_sel(amo_wdata_sel),
+    .f_reg_write(f_reg_write),
+    .f_wb_src(f_wb_src),
+    .div_start(div_start),
+    .fpu_start(fpu_start),
     .trap_pc_src(trap_pc_src),
     .state_out(state)
 );
@@ -177,6 +189,12 @@ datapath #(
     .amo_reservation_set(amo_reservation_set),
     .amo_reservation_clear(amo_reservation_clear),
     .amo_wdata_sel(amo_wdata_sel),
+    .f_reg_write(f_reg_write),
+    .f_wb_src(f_wb_src),
+    .div_start(div_start),
+    .div_ready(div_ready),
+    .fpu_start(fpu_start),
+    .fpu_ready(fpu_ready),
     .mepc(ret_epc),
     .mtvec(trap_vec),
     .csr_rdata(csr_rdata),
@@ -221,6 +239,7 @@ csr cs(
     .trap_value(trap_value),
     .mret(mret),
     .sret(sret),
+    .fp_dirty(f_reg_write),
     .ext_int(ext_int),
     .timer_int(timer_int),
     .soft_int(soft_int),
