@@ -10,8 +10,10 @@ module iomux(
 
     //物理引脚
     inout [31:0] pad,
+    input uart_rx_in,
 
-    output uart_irq
+    output uart_irq,
+    output uart_tx_out
 );
 
 parameter CLK_FREQ=50_000_000;
@@ -111,8 +113,9 @@ assign rdata=   is_uart? uart_rdata:
                 is_gpio? gpio_rdata:
                 32'b0;
 
-assign uart_rx_sig=gpio_afen[10]? pad[10]:1'b1;
+assign uart_rx_sig=gpio_afen[10]? uart_rx_in:1'b1;
 assign uart_irq=uart_rx_irq||uart_tx_irq;
+assign uart_tx_out=uart_tx_sig;
 
 genvar i;
 generate

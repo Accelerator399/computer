@@ -1,4 +1,6 @@
-module control(
+module control #(
+    parameter ENABLE_FPU = 1
+)(
     input clk,
     input rst,
     input [6:0] opcode,
@@ -73,6 +75,8 @@ reg [3:0] next_state;
 reg [3:0] state;
 reg [31:0] trap_cause_reg;
 
+localparam FPU_ON = (ENABLE_FPU != 0);
+
 assign state_out=((state==FPU_WAIT)||(state==DIV_WAIT))? 3'd2:state[2:0];
 
 wire is_system_inst;
@@ -145,9 +149,9 @@ assign legal_amo_inst=is_amo_inst&&
      amo_funct5==5'b10100||amo_funct5==5'b11000||
      amo_funct5==5'b11100);
 
-assign is_fp_load=(opcode==7'b0000111)&&(funct3==3'b010);
-assign is_fp_store=(opcode==7'b0100111)&&(funct3==3'b010);
-assign is_fp_op=(opcode==7'b1010011);
+assign is_fp_load=FPU_ON&&(opcode==7'b0000111)&&(funct3==3'b010);
+assign is_fp_store=FPU_ON&&(opcode==7'b0100111)&&(funct3==3'b010);
+assign is_fp_op=FPU_ON&&(opcode==7'b1010011);
 assign is_fadd_s=is_fp_op&&(funct7==7'b0000000);
 assign is_fsub_s=is_fp_op&&(funct7==7'b0000100);
 assign is_fmul_s=is_fp_op&&(funct7==7'b0001000);

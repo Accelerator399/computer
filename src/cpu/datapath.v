@@ -1,5 +1,6 @@
 module datapath #(
-    parameter RESET_VECTOR = 32'h0000_0000
+    parameter RESET_VECTOR = 32'h0000_0000,
+    parameter ENABLE_FPU = 1
 )(
     //全局
     input clk,
@@ -90,6 +91,7 @@ wire [31:0] fp_local_result;
 wire [31:0] fp_int_result;
 wire [31:0] zimm;
 
+localparam FPU_ON = (ENABLE_FPU != 0);
 
 reg [31:0] ir;
 reg [31:0] A,B;
@@ -325,7 +327,7 @@ function [31:0] i32_to_fp;
     end
 endfunction
 
-wire is_fp_op = ir[6:0] == 7'b1010011;
+wire is_fp_op = FPU_ON && (ir[6:0] == 7'b1010011);
 wire is_fadd_s = is_fp_op && (ir[31:25] == 7'b0000000);
 wire is_fsub_s = is_fp_op && (ir[31:25] == 7'b0000100);
 wire is_fmul_s = is_fp_op && (ir[31:25] == 7'b0001000);
@@ -351,8 +353,8 @@ wire is_fp_to_int = is_fmv_x_w || is_feq_s || is_flt_s || is_fle_s || is_fclass_
 wire is_fp_to_freg = is_fp_ip_op || is_fsgnj_s || is_fsgnjn_s || is_fsgnjx_s ||
                      is_fmin_s || is_fmax_s || is_fmv_w_x || is_fcvt_s_w || is_fcvt_s_wu;
 
-wire is_fp_load = (ir[6:0] == 7'b0000111) && (ir[14:12] == 3'b010);
-wire is_fp_store = (ir[6:0] == 7'b0100111) && (ir[14:12] == 3'b010);
+wire is_fp_load = FPU_ON && (ir[6:0] == 7'b0000111) && (ir[14:12] == 3'b010);
+wire is_fp_store = FPU_ON && (ir[6:0] == 7'b0100111) && (ir[14:12] == 3'b010);
 
 imm_gen ig(
     .inst(ir),
@@ -372,16 +374,23 @@ regfile rf(
     .test_data(test_data)
 );
 
-fregfile frf(
-    .rs1_addr(ir[19:15]),
-    .rs2_addr(ir[24:20]),
-    .rd_addr(ir[11:7]),
-    .rd_data(f_wb_data),
-    .we(f_reg_write),
-    .clk(clk),
-    .rs1_data(frs1_data),
-    .rs2_data(frs2_data)
-);
+generate
+    if(ENABLE_FPU) begin: gen_fpu_state
+        fregfile frf(
+            .rs1_addr(ir[19:15]),
+            .rs2_addr(ir[24:20]),
+            .rd_addr(ir[11:7]),
+            .rd_data(f_wb_data),
+            .we(f_reg_write),
+            .clk(clk),
+            .rs1_data(frs1_data),
+            .rs2_data(frs2_data)
+        );
+    end else begin: gen_no_fpu_state
+        assign frs1_data = 32'b0;
+        assign frs2_data = 32'b0;
+    end
+endgenerate
 
 alu_control ac(
     .alu_op(alu_op),
@@ -426,16 +435,23 @@ assign fpu_op = is_fsqrt_s ? 3'd4 :
                 is_fsub_s  ? 3'd1 :
                               3'd0;
 
-fpu_single fpu(
-    .clk(clk),
-    .rst(rst),
-    .start(fpu_start),
-    .op(fpu_op),
-    .a(FA),
-    .b(FB),
-    .ready(fpu_ready),
-    .result(fpu_result)
-);
+generate
+    if(ENABLE_FPU) begin: gen_fpu_exec
+        fpu_single fpu(
+            .clk(clk),
+            .rst(rst),
+            .start(fpu_start),
+            .op(fpu_op),
+            .a(FA),
+            .b(FB),
+            .ready(fpu_ready),
+            .result(fpu_result)
+        );
+    end else begin: gen_no_fpu_exec
+        assign fpu_ready = 1'b1;
+        assign fpu_result = 32'b0;
+    end
+endgenerate
 
 assign md_result=(md_sel==2'b00)? mul_result:
                  (md_sel==2'b01)? div_quotient:
@@ -521,7 +537,8 @@ wire [31:0] amo_result =
 wire [31:0] amo_store_data = is_sc_w ? B : amo_result;
 wire [31:0] amo_rd_data = is_sc_w ? (sc_success_reg ? 32'd0 : 32'd1) : amo_old;
 
-assign fp_int_result = is_feq_s     ? {31'b0, fp_eq(FA, FB)}:
+assign fp_int_result = !FPU_ON      ? 32'b0:
+                       is_feq_s     ? {31'b0, fp_eq(FA, FB)}:
                        is_flt_s     ? {31'b0, fp_lt(FA, FB)}:
                        is_fle_s     ? {31'b0, fp_lt(FA, FB) || fp_eq(FA, FB)}:
                        is_fclass_s  ? fp_class_bits(FA):
@@ -529,7 +546,8 @@ assign fp_int_result = is_feq_s     ? {31'b0, fp_eq(FA, FB)}:
                        is_fcvt_wu_s ? fp_to_i32(FA, 1'b1):
                                       FA;
 
-assign fp_local_result = is_fsgnj_s  ? {FB[31], FA[30:0]}:
+assign fp_local_result = !FPU_ON     ? 32'b0:
+                         is_fsgnj_s  ? {FB[31], FA[30:0]}:
                          is_fsgnjn_s ? {~FB[31], FA[30:0]}:
                          is_fsgnjx_s ? {FA[31] ^ FB[31], FA[30:0]}:
                          is_fmin_s   ? fp_min(FA, FB):

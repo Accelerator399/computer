@@ -7,8 +7,11 @@
 #define CLINT_MTIMECMP      0x10004000
 
 #define MSTATUS_MPP_S       0x00000800
+#define MIP_STIP            0x00000020
+#define MIE_MTIE            0x00000080
 #define MEDELEG_VALUE       0x0000b1ff
 #define MIDELEG_VALUE       0x00000222
+#define MCAUSE_MACHINE_TIMER 0x80000007
 
 #define SBI_SUCCESS         0
 #define SBI_ERR_NOT_SUPPORTED -2
@@ -30,6 +33,8 @@
 _start:
     la      t0, trap_vector
     csrw    mtvec, t0
+    la      t0, __stack_top
+    csrw    mscratch, t0
 
     li      t0, MEDELEG_VALUE
     csrw    medeleg, t0
@@ -44,15 +49,7 @@ _start:
     li      t1, UART_PAD_MASK
     sw      t1, 0(t0)
 
-    li      t0, UART_BASE
-    li      t1, 'F'
-    sw      t1, UART_THR(t0)
-    li      t1, 'W'
-    sw      t1, UART_THR(t0)
-    li      t1, 'O'
-    sw      t1, UART_THR(t0)
-    li      t1, 'K'
-    sw      t1, UART_THR(t0)
+    call    emit_fwok
 
     li      a0, 0
     li      a1, DTB_ADDR
@@ -74,6 +71,8 @@ zero_bss:
     ret
 
 puts:
+    addi    sp, sp, -4
+    sw      ra, 0(sp)
     mv      t2, a0
 1:
     lbu     a0, 0(t2)
@@ -82,6 +81,8 @@ puts:
     addi    t2, t2, 1
     j       1b
 2:
+    lw      ra, 0(sp)
+    addi    sp, sp, 4
     ret
 
 putchar:
@@ -96,12 +97,28 @@ putchar:
 emit_fwok:
     li      t0, UART_BASE
     li      t1, 'F'
+1:
+    lw      t2, UART_LSR(t0)
+    andi    t2, t2, UART_LSR_THRE
+    beqz    t2, 1b
     sw      t1, UART_THR(t0)
     li      t1, 'W'
+2:
+    lw      t2, UART_LSR(t0)
+    andi    t2, t2, UART_LSR_THRE
+    beqz    t2, 2b
     sw      t1, UART_THR(t0)
     li      t1, 'O'
+3:
+    lw      t2, UART_LSR(t0)
+    andi    t2, t2, UART_LSR_THRE
+    beqz    t2, 3b
     sw      t1, UART_THR(t0)
     li      t1, 'K'
+4:
+    lw      t2, UART_LSR(t0)
+    andi    t2, t2, UART_LSR_THRE
+    beqz    t2, 4b
     sw      t1, UART_THR(t0)
     ret
 
@@ -124,6 +141,8 @@ trap_vector:
     sw      a7, 52(sp)
 
     csrr    t0, mcause
+    li      t1, MCAUSE_MACHINE_TIMER
+    beq     t0, t1, trap_machine_timer
     li      t1, 9
     bne     t0, t1, trap_panic
 
@@ -157,7 +176,18 @@ sbi_legacy_set_timer:
     sw      t1, 4(t0)
     sw      a0, 0(t0)
     sw      a1, 4(t0)
+    li      t0, MIP_STIP
+    csrc    mip, t0
+    li      t0, MIE_MTIE
+    csrs    mie, t0
     j       sbi_success
+
+trap_machine_timer:
+    li      t0, MIE_MTIE
+    csrc    mie, t0
+    li      t0, MIP_STIP
+    csrs    mip, t0
+    j       trap_return
 
 sbi_base:
     beqz    a6, sbi_get_spec_version

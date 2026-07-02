@@ -4,17 +4,27 @@ module computer_core #(
     parameter RESET_VECTOR  = 32'h0000_0000,
     parameter MMIO_BASE     = 32'h1000_0000,
     parameter CLINT_BASE    = 32'h1000_0000,
+    parameter UART_BASE     = 32'h1001_0000,
+    parameter GPIO_BASE     = 32'h1002_0000,
     parameter PLIC_BASE     = 32'h1003_0000,
+    parameter ETH_BASE      = 32'h1044_0000,
+    parameter ETH_SIZE      = 32'h0000_2000,
     parameter BOOT_ROM_ENABLE = 0,
     parameter BOOT_ROM_BASE = 32'h0000_0000,
     parameter BOOT_ROM_WORDS = 64,
     parameter BOOT_ROM_INIT_FILE = "",
-    parameter TLB_ENTRIES   = 32
+    parameter BOOT_RAM_ENABLE = 0,
+    parameter BOOT_RAM_BASE = 32'h0000_8000,
+    parameter BOOT_RAM_WORDS = 8192,
+    parameter BOOT_RAM_INIT_FILE = "",
+    parameter TLB_ENTRIES   = 32,
+    parameter ENABLE_FPU    = 1
 )(
     input clk,
     input rst,
 
     inout [31:0] pad,
+    input uart_rx_in,
 
     input ext_int,
     input timer_int,
@@ -41,6 +51,15 @@ module computer_core #(
     output [31:0] satp_out,
     output [31:0] i_tlb_miss_count_out,
     output [31:0] d_tlb_miss_count_out,
+    output uart_tx_out,
+
+    output eth_mmio_req,
+    output eth_mmio_we,
+    output [12:0] eth_mmio_addr,
+    output [31:0] eth_mmio_wdata,
+    output [3:0] eth_mmio_wstrb,
+    input [31:0] eth_mmio_rdata,
+    input eth_mmio_ready,
 
     output icache_mem_req,
     output icache_mem_we,
@@ -83,6 +102,7 @@ wire cpu_sfence_vma;
 wire cpu_fence_i;
 wire cpu_mstatus_sum;
 wire cpu_mstatus_mxr;
+wire [1:0] cpu_data_privilege;
 
 wire [31:0] i_paddr;
 wire [31:0] d_paddr;
@@ -110,15 +130,34 @@ end
 
 wire i_req_valid = (state == CPU_IF);
 wire d_req_valid = (state == CPU_MEM) || (state == CPU_AMO_WRITE);
-wire mmu_active = satp_shadow[31] && (cpu_privilege != 2'b11);
-wire direct_mmio = (cpu_daddr >= MMIO_BASE) && !mmu_active;
+wire i_mmu_active = satp_shadow[31] && (cpu_privilege != 2'b11);
+wire d_mmu_active = satp_shadow[31] && (cpu_data_privilege != 2'b11);
+wire in_machine_mode = cpu_privilege == 2'b11;
 wire i_addr_misaligned;
 wire d_addr_misaligned;
 wire d_access_misaligned = d_req_valid && d_addr_misaligned;
+
+wire cpu_addr_is_clint = (cpu_daddr >= CLINT_BASE) && (cpu_daddr < (CLINT_BASE + 32'h0001_0000));
+wire cpu_addr_is_plic  = (cpu_daddr >= PLIC_BASE)  && (cpu_daddr < (PLIC_BASE  + 32'h0040_0000));
+wire cpu_addr_is_eth   = (cpu_daddr >= ETH_BASE)   && (cpu_daddr < (ETH_BASE   + ETH_SIZE));
+wire cpu_addr_is_uart  = (cpu_daddr >= UART_BASE)  && (cpu_daddr < (UART_BASE  + 32'h0000_0100));
+wire cpu_addr_is_gpio  = (cpu_daddr >= GPIO_BASE)  && (cpu_daddr < (GPIO_BASE  + 32'h0000_0010));
+wire cpu_addr_is_mmio = cpu_addr_is_clint || cpu_addr_is_plic || cpu_addr_is_eth ||
+                        cpu_addr_is_uart || cpu_addr_is_gpio;
+wire direct_mmio = cpu_addr_is_mmio && !d_mmu_active;
 wire [31:0] effective_d_paddr = direct_mmio ? cpu_daddr : d_paddr;
-wire is_mmio = direct_mmio || (d_translate_ready && !d_page_fault && (effective_d_paddr >= MMIO_BASE));
-wire is_clint = is_mmio && (effective_d_paddr >= CLINT_BASE) && (effective_d_paddr < (CLINT_BASE + 32'h0001_0000));
-wire is_plic = is_mmio && (effective_d_paddr >= PLIC_BASE) && (effective_d_paddr < (PLIC_BASE + 32'h0040_0000));
+wire effective_addr_is_clint = (effective_d_paddr >= CLINT_BASE) && (effective_d_paddr < (CLINT_BASE + 32'h0001_0000));
+wire effective_addr_is_plic  = (effective_d_paddr >= PLIC_BASE)  && (effective_d_paddr < (PLIC_BASE  + 32'h0040_0000));
+wire effective_addr_is_eth   = (effective_d_paddr >= ETH_BASE)   && (effective_d_paddr < (ETH_BASE   + ETH_SIZE));
+wire effective_addr_is_uart  = (effective_d_paddr >= UART_BASE)  && (effective_d_paddr < (UART_BASE  + 32'h0000_0100));
+wire effective_addr_is_gpio  = (effective_d_paddr >= GPIO_BASE)  && (effective_d_paddr < (GPIO_BASE  + 32'h0000_0010));
+wire effective_addr_is_mmio = effective_addr_is_clint || effective_addr_is_plic ||
+                              effective_addr_is_eth || effective_addr_is_uart ||
+                              effective_addr_is_gpio;
+wire is_mmio = direct_mmio || (d_translate_ready && !d_page_fault && effective_addr_is_mmio);
+wire is_clint = is_mmio && effective_addr_is_clint;
+wire is_plic = is_mmio && effective_addr_is_plic;
+wire is_eth = is_mmio && effective_addr_is_eth;
 wire [31:0] walker_pte =
     (walker_mem_addr[3:2] == 2'd0) ? walker_mem_rdata[31:0] :
     (walker_mem_addr[3:2] == 2'd1) ? walker_mem_rdata[63:32] :
@@ -136,6 +175,7 @@ mmu #(
     .csr_rdata(external_csr_rdata),
     .sfence_vma(cpu_sfence_vma),
     .privilege(cpu_privilege),
+    .d_privilege(cpu_data_privilege),
     .mstatus_sum(cpu_mstatus_sum),
     .mstatus_mxr(cpu_mstatus_mxr),
     .i_req_valid(i_req_valid),
@@ -173,7 +213,8 @@ reg [31:0] icache_req_paddr;
 reg [31:0] icache_done_paddr;
 wire [31:0] boot_rom_rdata;
 wire boot_rom_hit_raw;
-wire boot_rom_hit = BOOT_ROM_ENABLE && i_translate_ready && !i_page_fault && boot_rom_hit_raw;
+wire boot_rom_hit = BOOT_ROM_ENABLE && in_machine_mode &&
+                    i_translate_ready && !i_page_fault && boot_rom_hit_raw;
 wire boot_rom_fetch = i_req_valid && boot_rom_hit;
 wire icache_done_current = icache_done && (icache_done_paddr == i_paddr);
 wire icache_response_valid = cpu_icache_ready && icache_waiting &&
@@ -243,6 +284,11 @@ cache u_icache (
 );
 
 wire dcache_req_base = d_req_valid && d_translate_ready && !is_mmio && !d_page_fault;
+wire [31:0] boot_ram_rdata;
+wire boot_ram_hit_raw;
+wire boot_ram_hit = BOOT_RAM_ENABLE && in_machine_mode &&
+                    d_translate_ready && !d_page_fault && boot_ram_hit_raw;
+wire boot_ram_access = d_req_valid && boot_ram_hit;
 reg dcache_waiting;
 reg dcache_done;
 reg [31:0] dcache_req_paddr;
@@ -252,9 +298,24 @@ wire dcache_done_current = dcache_done && (dcache_done_paddr == effective_d_padd
 wire dcache_response_valid = dcache_ready && dcache_waiting &&
                              (dcache_req_paddr == effective_d_paddr) &&
                              d_req_valid && d_translate_ready &&
-                             !is_mmio && !d_page_fault;
-wire dcache_start = dcache_req_base && !dcache_waiting && !dcache_done_current;
+                             !is_mmio && !boot_ram_hit && !d_page_fault;
+wire dcache_start = dcache_req_base && !boot_ram_hit &&
+                    !dcache_waiting && !dcache_done_current;
 wire [31:0] dcache_rdata;
+
+boot_ram #(
+    .BASE_ADDR(BOOT_RAM_BASE),
+    .WORDS(BOOT_RAM_WORDS),
+    .INIT_FILE(BOOT_RAM_INIT_FILE)
+) u_boot_ram (
+    .clk(clk),
+    .addr(effective_d_paddr),
+    .wdata(cpu_wdata),
+    .wstrb(cpu_wstrb),
+    .we(boot_ram_access && cpu_mem_write),
+    .rdata(boot_ram_rdata),
+    .hit(boot_ram_hit_raw)
+);
 
 always @(posedge clk) begin
     if(rst || !d_req_valid) begin
@@ -272,7 +333,7 @@ always @(posedge clk) begin
         if(dcache_ready) begin
             dcache_waiting<=1'b0;
             if(dcache_waiting && dcache_req_paddr == effective_d_paddr &&
-               d_translate_ready && !is_mmio && !d_page_fault) begin
+               d_translate_ready && !is_mmio && !boot_ram_hit && !d_page_fault) begin
                 dcache_done<=1'b1;
                 dcache_done_paddr<=dcache_req_paddr;
             end
@@ -347,17 +408,31 @@ iomux #(
     .rst(rst),
     .addr(effective_d_paddr),
     .wdata(cpu_wdata),
-    .we(cpu_mem_write && is_mmio && !is_clint && !is_plic && d_req_valid),
+    .we(cpu_mem_write && is_mmio && !is_clint && !is_plic && !is_eth && d_req_valid),
     .rdata(iomux_rdata),
     .pad(pad),
-    .uart_irq(uart_irq)
+    .uart_rx_in(uart_rx_in),
+    .uart_irq(uart_irq),
+    .uart_tx_out(uart_tx_out)
 );
 
-assign cpu_rdata = is_mmio ? (is_clint ? clint_rdata : (is_plic ? plic_rdata : iomux_rdata)) : dcache_rdata;
-assign cpu_dcache_ready = is_mmio ? d_req_valid : dcache_response_valid;
+assign eth_mmio_req = d_req_valid && is_eth;
+assign eth_mmio_we = cpu_mem_write;
+assign eth_mmio_addr = effective_d_paddr[12:0];
+assign eth_mmio_wdata = cpu_wdata;
+assign eth_mmio_wstrb = cpu_wstrb;
+
+assign cpu_rdata = is_mmio ? (is_eth ? eth_mmio_rdata : (is_clint ? clint_rdata : (is_plic ? plic_rdata : iomux_rdata))) :
+                   boot_ram_hit ? boot_ram_rdata :
+                   dcache_rdata;
+assign cpu_dcache_ready = is_eth ? (d_req_valid && eth_mmio_ready) :
+                          is_mmio ? d_req_valid :
+                          boot_ram_hit ? d_req_valid :
+                          dcache_response_valid;
 
 cpu #(
-    .RESET_VECTOR(RESET_VECTOR)
+    .RESET_VECTOR(RESET_VECTOR),
+    .ENABLE_FPU(ENABLE_FPU)
 ) u_cpu (
     .clk(clk),
     .rst(rst),
@@ -382,6 +457,7 @@ cpu #(
     .fence_i(cpu_fence_i),
     .mstatus_sum(cpu_mstatus_sum),
     .mstatus_mxr(cpu_mstatus_mxr),
+    .data_privilege_mode(cpu_data_privilege),
     .privilege_mode(cpu_privilege),
     .ext_int(plic_ext_int),
     .timer_int(timer_int | clint_timer_int),

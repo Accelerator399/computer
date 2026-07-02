@@ -1,14 +1,27 @@
 module computer_ddr_bridge #(
     parameter CLK_FREQ      = 100_000_000,
     parameter BAUD_RATE     = 115200,
+    parameter RESET_VECTOR  = 32'h0000_0000,
+    parameter DDR_BASE      = 32'h8000_0000,
     parameter MMIO_BASE     = 32'h1000_0000,
+    parameter ETH_BASE      = 32'h1044_0000,
     parameter TLB_ENTRIES   = 32,
-    parameter MIG_ADDR_WIDTH = 27
+    parameter MIG_ADDR_WIDTH = 27,
+    parameter BOOT_ROM_ENABLE = 0,
+    parameter BOOT_ROM_BASE = 32'h0000_0000,
+    parameter BOOT_ROM_WORDS = 64,
+    parameter BOOT_ROM_INIT_FILE = "",
+    parameter BOOT_RAM_ENABLE = 0,
+    parameter BOOT_RAM_BASE = 32'h0000_8000,
+    parameter BOOT_RAM_WORDS = 8192,
+    parameter BOOT_RAM_INIT_FILE = "",
+    parameter ENABLE_FPU    = 1
 )(
     input clk,
     input rst,
 
     inout [31:0] pad,
+    input uart_rx_in,
 
     input ext_int,
     input timer_int,
@@ -31,6 +44,15 @@ module computer_ddr_bridge #(
     output i_page_fault_out,
     output d_page_fault_out,
     output [31:0] satp_out,
+    output uart_tx_out,
+
+    output eth_mmio_req,
+    output eth_mmio_we,
+    output [12:0] eth_mmio_addr,
+    output [31:0] eth_mmio_wdata,
+    output [3:0] eth_mmio_wstrb,
+    input [31:0] eth_mmio_rdata,
+    input eth_mmio_ready,
 
     input ui_clk_sync_rst,
     input init_calib_complete,
@@ -72,12 +94,24 @@ wire walker_mem_ready;
 computer_core #(
     .CLK_FREQ(CLK_FREQ),
     .BAUD_RATE(BAUD_RATE),
+    .RESET_VECTOR(RESET_VECTOR),
     .MMIO_BASE(MMIO_BASE),
-    .TLB_ENTRIES(TLB_ENTRIES)
+    .ETH_BASE(ETH_BASE),
+    .BOOT_ROM_ENABLE(BOOT_ROM_ENABLE),
+    .BOOT_ROM_BASE(BOOT_ROM_BASE),
+    .BOOT_ROM_WORDS(BOOT_ROM_WORDS),
+    .BOOT_ROM_INIT_FILE(BOOT_ROM_INIT_FILE),
+    .BOOT_RAM_ENABLE(BOOT_RAM_ENABLE),
+    .BOOT_RAM_BASE(BOOT_RAM_BASE),
+    .BOOT_RAM_WORDS(BOOT_RAM_WORDS),
+    .BOOT_RAM_INIT_FILE(BOOT_RAM_INIT_FILE),
+    .TLB_ENTRIES(TLB_ENTRIES),
+    .ENABLE_FPU(ENABLE_FPU)
 ) u_core (
     .clk(clk),
     .rst(rst),
     .pad(pad),
+    .uart_rx_in(uart_rx_in),
     .ext_int(ext_int),
     .timer_int(timer_int),
     .soft_int(soft_int),
@@ -100,6 +134,14 @@ computer_core #(
     .satp_out(satp_out),
     .i_tlb_miss_count_out(),
     .d_tlb_miss_count_out(),
+    .uart_tx_out(uart_tx_out),
+    .eth_mmio_req(eth_mmio_req),
+    .eth_mmio_we(eth_mmio_we),
+    .eth_mmio_addr(eth_mmio_addr),
+    .eth_mmio_wdata(eth_mmio_wdata),
+    .eth_mmio_wstrb(eth_mmio_wstrb),
+    .eth_mmio_rdata(eth_mmio_rdata),
+    .eth_mmio_ready(eth_mmio_ready),
     .icache_mem_req(icache_mem_req),
     .icache_mem_we(icache_mem_we),
     .icache_mem_addr(icache_mem_addr),
@@ -122,7 +164,8 @@ computer_core #(
 
 mmu_ddr_adapter #(
     .ADDR_WIDTH(MIG_ADDR_WIDTH),
-    .DATA_WIDTH(128)
+    .DATA_WIDTH(128),
+    .DDR_BASE(DDR_BASE)
 ) u_ddr_adapter (
     .clk(clk),
     .rst(rst),

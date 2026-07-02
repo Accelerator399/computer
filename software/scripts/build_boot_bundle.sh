@@ -6,10 +6,11 @@ BUILD_DIR="${BUILD_DIR:-$ROOT/build/software}"
 FW_BUILD_DIR="${FW_BUILD_DIR:-$BUILD_DIR/opensbi-lite}"
 DTB_OUT="${DTB_OUT:-$BUILD_DIR/computer-rv32.dtb}"
 PRELOAD_OUT="${PRELOAD_OUT:-$ROOT/software/image/linux_preload.memh}"
+DTS_CLK_FREQ="${DTS_CLK_FREQ:-100000000}"
 
 FW_ADDR="${FW_ADDR:-0x00000000}"
 LINUX_ADDR="${LINUX_ADDR:-0x00400000}"
-DTB_ADDR="${DTB_ADDR:-0x00800000}"
+DTB_ADDR="${DTB_ADDR:-0x04000000}"
 LINUX_IMAGE="${LINUX_IMAGE:-}"
 
 DTC="${DTC:-dtc}"
@@ -17,13 +18,19 @@ PYTHON="${PYTHON:-python3}"
 
 mkdir -p "$BUILD_DIR" "$(dirname "$PRELOAD_OUT")"
 
+generated_dts="$BUILD_DIR/computer-rv32.generated.dts"
+sed \
+    -e "s/timebase-frequency = <[0-9][0-9]*>/timebase-frequency = <$DTS_CLK_FREQ>/" \
+    -e "s/clock-frequency = <[0-9][0-9]*>/clock-frequency = <$DTS_CLK_FREQ>/" \
+    "$ROOT/software/dts/computer-rv32.dts" > "$generated_dts"
+
 make -C "$ROOT/software/firmware/opensbi-lite" \
     BUILD_DIR="$FW_BUILD_DIR" \
     FW_BASE="$FW_ADDR" \
     LINUX_ENTRY="$LINUX_ADDR" \
     DTB_ADDR="$DTB_ADDR"
 
-"$DTC" -I dts -O dtb -o "$DTB_OUT" "$ROOT/software/dts/computer-rv32.dts"
+"$DTC" -I dts -O dtb -o "$DTB_OUT" "$generated_dts"
 
 images=(
     --image "$FW_BUILD_DIR/fw_jump.bin@$FW_ADDR"

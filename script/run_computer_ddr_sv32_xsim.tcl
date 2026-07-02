@@ -104,6 +104,7 @@ add_verilog $fh [file join $root src mmu mmu.v]
 add_verilog $fh [file join $root src mmu cache.v]
 add_verilog $fh [file join $root src mmu mmu_ddr_adapter.v]
 add_verilog $fh [file join $root src integration boot_rom.v]
+add_verilog $fh [file join $root src integration boot_ram.v]
 add_verilog $fh [file join $root src integration computer_core.v]
 add_verilog $fh [file join $root src integration computer_ddr_bridge.v]
 

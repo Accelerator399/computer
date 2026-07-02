@@ -12,13 +12,13 @@
 
     chosen {
         stdout-path = "serial0:115200n8";
-        bootargs = "earlycon=uart8250,mmio32,0x10010000,115200n8 console=ttyS0,115200n8 rdinit=/init loglevel=8 ignore_loglevel";
+        bootargs = "earlycon=sbi console=hvc0 rdinit=/init loglevel=8 ignore_loglevel initcall_debug";
     };
 
     cpus {
         #address-cells = <1>;
         #size-cells = <0>;
-        timebase-frequency = <100000000>;
+        timebase-frequency = <50000000>;
 
         cpu0: cpu@0 {
             device_type = "cpu";
@@ -36,9 +36,9 @@
         };
     };
 
-    memory@0 {
+    memory@80000000 {
         device_type = "memory";
-        reg = <0x00000000 0x08000000>;
+        reg = <0x80000000 0x08000000>;
     };
 
     soc {
@@ -58,7 +58,7 @@
             reg = <0x10010000 0x100>;
             reg-shift = <2>;
             reg-io-width = <4>;
-            clock-frequency = <100000000>;
+            clock-frequency = <50000000>;
             interrupt-parent = <&plic>;
             interrupts = <2>;
         };

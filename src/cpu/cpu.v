@@ -1,5 +1,6 @@
 module cpu #(
-    parameter RESET_VECTOR = 32'h0000_0000
+    parameter RESET_VECTOR = 32'h0000_0000,
+    parameter ENABLE_FPU = 1
 )(
     //全局
     input clk,
@@ -31,6 +32,7 @@ module cpu #(
     output fence_i,
     output mstatus_sum,
     output mstatus_mxr,
+    output [1:0] data_privilege_mode,
     output [1:0] privilege_mode,
 
     //中断输入
@@ -99,10 +101,13 @@ wire mie;
 wire int_pending;
 wire [31:0] mip;
 wire [1:0] privilege;
+wire [1:0] data_privilege;
 wire mstatus_sum_wire;
 wire mstatus_mxr_wire;
 
-control ct(
+control #(
+    .ENABLE_FPU(ENABLE_FPU)
+) ct (
     .clk(clk),
     .rst(rst),
     .opcode(opcode),
@@ -163,7 +168,8 @@ control ct(
 );
 
 datapath #(
-    .RESET_VECTOR(RESET_VECTOR)
+    .RESET_VECTOR(RESET_VECTOR),
+    .ENABLE_FPU(ENABLE_FPU)
 ) dp (
     .clk(clk),
     .rst(rst),
@@ -221,7 +227,9 @@ datapath #(
     .test_data(test_data)
 );
 
-csr cs(
+csr #(
+    .ENABLE_FPU(ENABLE_FPU)
+) cs (
     .clk(clk),
     .rst(rst),
     .csr_op(csr_op),
@@ -250,6 +258,7 @@ csr cs(
     .mip_out(mip),
     .mstatus_sum(mstatus_sum_wire),
     .mstatus_mxr(mstatus_mxr_wire),
+    .data_privilege(data_privilege),
     .privilege(privilege)
 );
 
@@ -258,6 +267,7 @@ assign sfence_vma=sfence_vma_wire;
 assign fence_i=fence_i_wire;
 assign mstatus_sum=mstatus_sum_wire;
 assign mstatus_mxr=mstatus_mxr_wire;
+assign data_privilege_mode=data_privilege;
 assign privilege_mode=privilege;
 
 assign exception_value=(cause==32'd0)? i_trap_addr:

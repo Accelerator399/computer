@@ -25,6 +25,7 @@ set srcs {
     src/mmu/mmu.v
     src/mmu/cache.v
     src/integration/boot_rom.v
+    src/integration/boot_ram.v
     src/integration/computer_core.v
     src/integration/simple_mem128.v
     src/integration/top_sim.v

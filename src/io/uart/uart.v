@@ -42,7 +42,10 @@ tx tx_inst(
     .pin(uart_tx)
 );
 
-rx rx_inst(
+rx #(
+    .CLK_FREQ(CLK_FREQ),
+    .BAUD_RATE(BAUD_RATE)
+) rx_inst(
     .clk(clk),
     .rst(rst),
     .tick(rx_tick),

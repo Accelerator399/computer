@@ -160,13 +160,13 @@ function automatic [31:0] rom;
     input [31:0] addr;
     begin
         case(addr)
-            32'h0000_0000: rom = addi(5'd1, 5'd0, 12'h080);
-            32'h0000_0004: rom = csrrw(12'h305, 5'd1); // mtvec = 0x80
+            32'h0000_0000: rom = addi(5'd1, 5'd0, 12'h090);
+            32'h0000_0004: rom = csrrw(12'h305, 5'd1); // mtvec = 0x90
             32'h0000_0008: rom = ecall();
 
             32'h0000_000c: rom = addi(5'd6, 5'd0, 12'h022);
-            32'h0000_0010: rom = addi(5'd1, 5'd0, 12'h090);
-            32'h0000_0014: rom = csrrw(12'h305, 5'd1); // mtvec = 0x90
+            32'h0000_0010: rom = addi(5'd1, 5'd0, 12'h0a0);
+            32'h0000_0014: rom = csrrw(12'h305, 5'd1); // mtvec = 0xa0
             32'h0000_0018: rom = ebreak();
 
             32'h0000_001c: rom = addi(5'd1, 5'd0, 12'h0c0);
@@ -188,21 +188,24 @@ function automatic [31:0] rom;
             32'h0000_0058: rom = csrrs(5'd13, 12'hf12, 5'd0); // marchid
             32'h0000_005c: rom = csrrs(5'd14, 12'hf13, 5'd0); // mimpid
             32'h0000_0060: rom = csrrs(5'd15, 12'hf14, 5'd0); // mhartid
-            32'h0000_0064: rom = inst_fence_i();
-            32'h0000_0068: rom = fence();
-            32'h0000_006c: rom = wfi();
-            32'h0000_0070: rom = addi(5'd16, 5'd0, 12'h077);
-            32'h0000_0074: rom = jal_zero(21'h0);
+            32'h0000_0064: rom = addi(5'd1, 5'd0, 12'h12c);
+            32'h0000_0068: rom = csrrw(12'h340, 5'd1); // mscratch = 0x12c
+            32'h0000_006c: rom = csrrs(5'd17, 12'h340, 5'd0); // read mscratch
+            32'h0000_0070: rom = inst_fence_i();
+            32'h0000_0074: rom = fence();
+            32'h0000_0078: rom = wfi();
+            32'h0000_007c: rom = addi(5'd16, 5'd0, 12'h077);
+            32'h0000_0080: rom = jal_zero(21'h0);
 
-            32'h0000_0080: rom = addi(5'd5, 5'd0, 12'h011);
-            32'h0000_0084: rom = addi(5'd1, 5'd0, 12'h00c);
-            32'h0000_0088: rom = csrrw(12'h341, 5'd1); // mepc = 0x0c
-            32'h0000_008c: rom = mret();
-
-            32'h0000_0090: rom = addi(5'd7, 5'd0, 12'h033);
-            32'h0000_0094: rom = addi(5'd1, 5'd0, 12'h01c);
-            32'h0000_0098: rom = csrrw(12'h341, 5'd1); // mepc = 0x1c
+            32'h0000_0090: rom = addi(5'd5, 5'd0, 12'h011);
+            32'h0000_0094: rom = addi(5'd1, 5'd0, 12'h00c);
+            32'h0000_0098: rom = csrrw(12'h341, 5'd1); // mepc = 0x0c
             32'h0000_009c: rom = mret();
+
+            32'h0000_00a0: rom = addi(5'd7, 5'd0, 12'h033);
+            32'h0000_00a4: rom = addi(5'd1, 5'd0, 12'h01c);
+            32'h0000_00a8: rom = csrrw(12'h341, 5'd1); // mepc = 0x1c
+            32'h0000_00ac: rom = mret();
 
             32'h0000_00c0: rom = addi(5'd9, 5'd0, 12'h055);
             32'h0000_00c4: rom = addi(5'd1, 5'd0, 12'h04c);
@@ -256,9 +259,9 @@ always @(posedge clk) begin
         saw_sret_to_s <= 1'b0;
         saw_fence_i <= 1'b0;
     end else begin
-        if(pc == 32'h0000_0080 && dut.cs.mcause_reg == 32'd11)
+        if(pc == 32'h0000_0090 && dut.cs.mcause_reg == 32'd11)
             saw_m_ecall <= 1'b1;
-        if(pc == 32'h0000_0090 && dut.cs.mcause_reg == 32'd3)
+        if(pc == 32'h0000_00a0 && dut.cs.mcause_reg == 32'd3)
             saw_m_ebreak <= 1'b1;
         if(pc == 32'h0000_00c0 && dut.cs.scause_reg == 32'd9)
             saw_s_ecall <= 1'b1;
@@ -282,11 +285,11 @@ initial begin
     for(cycle = 0; cycle < 240; cycle = cycle + 1) begin
         @(posedge clk);
         #1;
-        if(pc == 32'h0000_0074 && state == CPU_IF)
+        if(pc == 32'h0000_0080 && state == CPU_IF)
             cycle = 240;
     end
 
-    check(pc == 32'h0000_0074, "privileged program reaches the final spin");
+    check(pc == 32'h0000_0080, "privileged program reaches the final spin");
     check(saw_m_ecall, "M-mode ecall traps to mtvec with mcause=11");
     check(saw_m_ebreak, "ebreak decodes through funct12 and traps with mcause=3");
     check(saw_mret_to_s, "mret restores S privilege from mstatus.MPP");
@@ -304,6 +307,7 @@ initial begin
     check_reg(5'd14, 32'h0000_0001, "mimpid is readable");
     check_reg(5'd15, 32'h0000_0000, "mhartid is readable");
     check_reg(5'd16, 32'h0000_0077, "fence/fence.i/wfi continue execution");
+    check_reg(5'd17, 32'h0000_012c, "mscratch is writable and readable");
     check(saw_fence_i, "fence.i pulses the I-cache flush signal");
     check(privilege_mode == PRIV_S, "final privilege remains S-mode");
     check(!sfence_vma, "non-sfence privileged program does not pulse sfence.vma");

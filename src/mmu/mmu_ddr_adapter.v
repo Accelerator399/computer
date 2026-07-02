@@ -4,7 +4,8 @@
 
 module mmu_ddr_adapter #(
     parameter ADDR_WIDTH = 28,    // MIG 地址位宽
-    parameter DATA_WIDTH = 128    // MIG 数据位宽
+    parameter DATA_WIDTH = 128,   // MIG 数据位宽
+    parameter DDR_BASE = 32'h8000_0000
 )(
     // 系统信号
     input clk,
@@ -94,6 +95,10 @@ reg dcache_req_blocked;
 wire icache_req_allowed = icache_req && !icache_req_blocked;
 wire dcache_req_allowed = dcache_req && !dcache_req_blocked;
 
+wire [31:0] icache_ddr_addr = icache_addr - DDR_BASE;
+wire [31:0] dcache_ddr_addr = dcache_addr - DDR_BASE;
+wire [31:0] walker_ddr_addr = next_walker_addr - DDR_BASE;
+
 // 输出逻辑和 MIG 握手
 always @(posedge clk) begin
     if (rst || ui_clk_sync_rst) begin
@@ -144,7 +149,7 @@ always @(posedge clk) begin
                     if (walker_pending || walker_req) begin
                         curr_addr <= next_walker_addr;
                         curr_target <= 2'd2;
-                        app_addr <= {next_walker_addr[ADDR_WIDTH-1:4], 4'b0};
+                        app_addr <= {walker_ddr_addr[ADDR_WIDTH-1:4], 4'b0};
                         app_cmd <= CMD_READ;
                         app_en <= 1;
                         walker_pending <= 1'b0;
@@ -157,7 +162,7 @@ always @(posedge clk) begin
                             curr_wdata <= dcache_wdata;
                             curr_wstrb <= dcache_wstrb;
                             curr_target <= 2'd1;
-                            app_addr <= dcache_addr[ADDR_WIDTH-1:0];
+                            app_addr <= dcache_ddr_addr[ADDR_WIDTH-1:0];
                             app_cmd <= dcache_we ? CMD_WRITE : CMD_READ;
                             if (dcache_we) begin
                                 app_wdf_data <= dcache_wdata;
@@ -173,7 +178,7 @@ always @(posedge clk) begin
                         end else if (icache_req_allowed) begin
                             curr_addr <= icache_addr;
                             curr_target <= 2'd0;
-                            app_addr <= icache_addr[ADDR_WIDTH-1:0];
+                            app_addr <= icache_ddr_addr[ADDR_WIDTH-1:0];
                             app_cmd <= CMD_READ;
                             app_en <= 1;
                             state <= I_READ;
@@ -182,7 +187,7 @@ always @(posedge clk) begin
                         if (icache_req_allowed) begin
                             curr_addr <= icache_addr;
                             curr_target <= 2'd0;
-                            app_addr <= icache_addr[ADDR_WIDTH-1:0];
+                            app_addr <= icache_ddr_addr[ADDR_WIDTH-1:0];
                             app_cmd <= CMD_READ;
                             app_en <= 1;
                             state <= I_READ;
@@ -191,7 +196,7 @@ always @(posedge clk) begin
                             curr_wdata <= dcache_wdata;
                             curr_wstrb <= dcache_wstrb;
                             curr_target <= 2'd1;
-                            app_addr <= dcache_addr[ADDR_WIDTH-1:0];
+                            app_addr <= dcache_ddr_addr[ADDR_WIDTH-1:0];
                             app_cmd <= dcache_we ? CMD_WRITE : CMD_READ;
                             if (dcache_we) begin
                                 app_wdf_data <= dcache_wdata;

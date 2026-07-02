@@ -42,6 +42,7 @@ set srcs {
     src/mmu/mmu.v
     src/mmu/cache.v
     src/integration/boot_rom.v
+    src/integration/boot_ram.v
     src/integration/computer_core.v
     src/tb/tb_core_linux_smoke_preload.v
 }
@@ -52,5 +53,6 @@ foreach src $srcs {
 }
 
 puts [exec xvlog {*}$xvlog_args]
-puts [exec xelab tb_core_linux_smoke_preload -debug typical --timescale 1ns/1ps --override_timeunit --override_timeprecision -s tb_core_linux_smoke_preload_sim]
-puts [exec xsim tb_core_linux_smoke_preload_sim -testplusarg PRELOAD=$preload_file -runall]
+set sim_name [format "tb_core_linux_smoke_preload_sim_%s" [clock seconds]]
+puts [exec xelab tb_core_linux_smoke_preload -debug typical --timescale 1ns/1ps --override_timeunit --override_timeprecision -s $sim_name]
+puts [exec xsim $sim_name -testplusarg PRELOAD=$preload_file -runall]

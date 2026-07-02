@@ -1,21 +1,276 @@
+# Linux 6.6 configuration overrides for the local RV32IMA computer.
+#
+# Build flow:
+#   defconfig -> this fragment -> generated initramfs fragment -> olddefconfig
+# The build script also forces and validates the critical options below after
+# olddefconfig, because some RISC-V defaults pull unrelated SoC stacks back in.
+
+CONFIG_NONPORTABLE=y
+CONFIG_EXPERT=y
+CONFIG_EMBEDDED=y
+# CONFIG_BASE_FULL is not set
+CONFIG_BASE_SMALL=1
+CONFIG_CC_OPTIMIZE_FOR_SIZE=y
+# CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE is not set
+
+CONFIG_ARCH_RV32I=y
+# CONFIG_ARCH_RV64I is not set
 CONFIG_32BIT=y
+# CONFIG_64BIT is not set
 CONFIG_MMU=y
-CONFIG_SMP=n
-CONFIG_RISCV_ISA_C=n
-CONFIG_FPU=n
-CONFIG_MODULES=n
-CONFIG_SERIAL_8250=y
-CONFIG_SERIAL_8250_CONSOLE=y
-CONFIG_SERIAL_EARLYCON=y
-CONFIG_SERIAL_OF_PLATFORM=y
+
+# The FPGA board exposes a single small contiguous DDR range.  Use FLATMEM on
+# RV32 to avoid sparsemem section bookkeeping during the first Linux bring-up.
+CONFIG_FLATMEM_MANUAL=y
+CONFIG_FLATMEM=y
+# CONFIG_SPARSEMEM_MANUAL is not set
+# CONFIG_SPARSEMEM is not set
+# CONFIG_SPARSEMEM_STATIC is not set
+
+# This CPU is RV32IMA plus Zicsr/Zifencei. Do not let Linux emit or advertise
+# compressed, floating-point, vector, or cache-management ISA extensions.
+# CONFIG_RISCV_ISA_C is not set
+# CONFIG_FPU is not set
+# CONFIG_RISCV_ISA_V is not set
+# CONFIG_RISCV_ISA_ZBB is not set
+# CONFIG_RISCV_ISA_ZICBOM is not set
+# CONFIG_RISCV_ISA_ZICBOZ is not set
+# CONFIG_RISCV_DMA_NONCOHERENT is not set
+
+# One hart, no UEFI/ACPI/PCI/virtualization.
+# CONFIG_SMP is not set
+# CONFIG_HOTPLUG_CPU is not set
+# CONFIG_EFI is not set
+# CONFIG_ACPI is not set
+# CONFIG_PCI is not set
+# CONFIG_VIRTUALIZATION is not set
+# CONFIG_KVM is not set
+
+# Keep the custom FPGA target free of real SoC platform defaults.
+# CONFIG_SOC_MICROCHIP_POLARFIRE is not set
+# CONFIG_ARCH_RENESAS is not set
+# CONFIG_SOC_SIFIVE is not set
+# CONFIG_SOC_STARFIVE is not set
+# CONFIG_ARCH_SUNXI is not set
+# CONFIG_ARCH_THEAD is not set
+# CONFIG_SOC_VIRT is not set
+# CONFIG_ERRATA_ANDES is not set
+# CONFIG_ERRATA_SIFIVE is not set
+# CONFIG_ERRATA_THEAD is not set
+
+# M-mode firmware provides SBI services. The primary Linux console is the
+# MMIO ns16550-compatible UART in this project, while SBI console remains a
+# useful fallback during early bring-up.
+CONFIG_RISCV_SBI=y
+CONFIG_RISCV_SBI_V01=y
+CONFIG_RISCV_ISA_FALLBACK=y
 CONFIG_HVC_RISCV_SBI=y
+CONFIG_SERIAL_EARLYCON_RISCV_SBI=y
+
+CONFIG_HZ_100=y
+# CONFIG_HZ_250 is not set
+# CONFIG_HZ_300 is not set
+# CONFIG_HZ_1000 is not set
+CONFIG_HZ=100
+
+CONFIG_PRINTK=y
+# CONFIG_PRINTK_TIME is not set
+# CONFIG_BUG is not set
+
+CONFIG_TTY=y
+# CONFIG_VT is not set
+# CONFIG_UNIX98_PTYS is not set
+# CONFIG_LEGACY_PTYS is not set
+
+# CONFIG_SERIAL_8250 is not set
+# CONFIG_SERIAL_8250_CONSOLE is not set
+# CONFIG_SERIAL_8250_DEPRECATED_OPTIONS is not set
+# CONFIG_SERIAL_8250_PNP is not set
+# CONFIG_SERIAL_8250_16550A_VARIANTS is not set
+# CONFIG_SERIAL_8250_DMA is not set
+# CONFIG_SERIAL_8250_PCILIB is not set
+# CONFIG_SERIAL_8250_PCI is not set
+# CONFIG_SERIAL_OF_PLATFORM is not set
+CONFIG_SERIAL_EARLYCON=y
+# CONFIG_SERIAL_SH_SCI is not set
+# CONFIG_SERIAL_SIFIVE is not set
+# CONFIG_VIRTIO_CONSOLE is not set
+
+CONFIG_BINFMT_ELF=y
+# CONFIG_COREDUMP is not set
 CONFIG_BLK_DEV_INITRD=y
-CONFIG_INITRAMFS_SOURCE=""
-CONFIG_CMDLINE_BOOL=y
-CONFIG_CMDLINE="earlycon=uart8250,mmio32,0x10010000,115200n8 console=ttyS0,115200n8 rdinit=/init loglevel=8 ignore_loglevel"
-CONFIG_CMDLINE_FORCE=n
-CONFIG_DEVTMPFS=y
-CONFIG_DEVTMPFS_MOUNT=y
+CONFIG_INITRAMFS_ROOT_UID=0
+CONFIG_INITRAMFS_ROOT_GID=0
+CONFIG_INITRAMFS_COMPRESSION_NONE=y
+# CONFIG_INITRAMFS_COMPRESSION_GZIP is not set
+
+# The initramfs contains a tiny static /init. Avoid kdevtmpfs and unrelated
+# device discovery during first bring-up.
+# CONFIG_DEVTMPFS is not set
+# CONFIG_DEVTMPFS_MOUNT is not set
 CONFIG_PROC_FS=y
 CONFIG_SYSFS=y
 CONFIG_TMPFS=y
+# CONFIG_PROC_PAGE_MONITOR is not set
+# CONFIG_PROC_CHILDREN is not set
+# CONFIG_TMPFS_POSIX_ACL is not set
+# CONFIG_TMPFS_XATTR is not set
+
+# Keep the demo kernel small. Ethernet Lite is only used by M-mode firmware
+# before Linux starts; Linux itself does not need a net stack yet.
+# CONFIG_MODULES is not set
+# CONFIG_NET is not set
+# CONFIG_BLOCK is not set
+# CONFIG_SCSI is not set
+# CONFIG_MD is not set
+# CONFIG_AUDIT is not set
+# CONFIG_CGROUPS is not set
+# CONFIG_NAMESPACES is not set
+# CONFIG_CHECKPOINT_RESTORE is not set
+# CONFIG_FHANDLE is not set
+# CONFIG_BPF_SYSCALL is not set
+
+# Hardware stacks absent from the current DT.
+# CONFIG_VIRTIO_MENU is not set
+# CONFIG_VIRTIO is not set
+# CONFIG_HW_RANDOM_VIRTIO is not set
+# CONFIG_RPMSG is not set
+# CONFIG_RPMSG_CHAR is not set
+# CONFIG_RPMSG_CTRL is not set
+# CONFIG_RPMSG_VIRTIO is not set
+# CONFIG_IOMMU_SUPPORT is not set
+# CONFIG_DMADEVICES is not set
+# CONFIG_INPUT is not set
+# CONFIG_HID_SUPPORT is not set
+# CONFIG_USB_SUPPORT is not set
+# CONFIG_USB is not set
+# CONFIG_I2C is not set
+# CONFIG_SPI is not set
+# CONFIG_PINCTRL is not set
+# CONFIG_GPIOLIB is not set
+# CONFIG_GPIO_CDEV is not set
+# CONFIG_GPIO_GENERIC is not set
+# CONFIG_GPIO_SIFIVE is not set
+# CONFIG_DRM is not set
+# CONFIG_FB is not set
+# CONFIG_SOUND is not set
+# CONFIG_MMC is not set
+# CONFIG_RTC_CLASS is not set
+# CONFIG_HW_RANDOM is not set
+# CONFIG_MEDIA_SUPPORT is not set
+# CONFIG_NVMEM is not set
+# CONFIG_HWMON is not set
+# CONFIG_REGULATOR is not set
+# CONFIG_POWER_SUPPLY is not set
+# CONFIG_THERMAL is not set
+# CONFIG_WATCHDOG is not set
+# CONFIG_GOLDFISH is not set
+
+# Vendor clock/pinctrl/platform drivers pulled by RISC-V defconfig.
+# CONFIG_PINCTRL_RENESAS is not set
+# CONFIG_PINCTRL_STARFIVE_JH7100 is not set
+# CONFIG_PINCTRL_STARFIVE_JH7110 is not set
+# CONFIG_PINCTRL_STARFIVE_JH7110_SYS is not set
+# CONFIG_PINCTRL_STARFIVE_JH7110_AON is not set
+# CONFIG_PINCTRL_SUNXI is not set
+# CONFIG_PINCTRL_SUN20I_D1 is not set
+# CONFIG_CLK_ANALOGBITS_WRPLL_CLN28HPC is not set
+# CONFIG_MCHP_CLK_MPFS is not set
+# CONFIG_CLK_RENESAS is not set
+# CONFIG_CLK_SIFIVE is not set
+# CONFIG_CLK_SIFIVE_PRCI is not set
+# CONFIG_CLK_STARFIVE_JH71X0 is not set
+# CONFIG_CLK_STARFIVE_JH7100 is not set
+# CONFIG_CLK_STARFIVE_JH7100_AUDIO is not set
+# CONFIG_CLK_STARFIVE_JH7110_PLL is not set
+# CONFIG_CLK_STARFIVE_JH7110_SYS is not set
+# CONFIG_CLK_STARFIVE_JH7110_AON is not set
+# CONFIG_CLK_STARFIVE_JH7110_STG is not set
+# CONFIG_CLK_STARFIVE_JH7110_ISP is not set
+# CONFIG_CLK_STARFIVE_JH7110_VOUT is not set
+# CONFIG_ARCH_R9A07G043 is not set
+# CONFIG_SOC_RENESAS is not set
+
+# No suspend/idle/power-management flow yet.
+# CONFIG_PM is not set
+# CONFIG_PM_SLEEP is not set
+# CONFIG_SUSPEND is not set
+# CONFIG_SUSPEND_FREEZER is not set
+# CONFIG_POWER_RESET is not set
+# CONFIG_POWER_RESET_SYSCON is not set
+# CONFIG_POWER_RESET_SYSCON_POWEROFF is not set
+# CONFIG_CPU_IDLE is not set
+# CONFIG_RISCV_SBI_CPUIDLE is not set
+# CONFIG_RISCV_PMU is not set
+
+# Minimal filesystem support for the embedded initramfs.
+# CONFIG_EXT4_FS is not set
+# CONFIG_MSDOS_FS is not set
+# CONFIG_VFAT_FS is not set
+# CONFIG_FAT_FS is not set
+# CONFIG_NFS_FS is not set
+# CONFIG_ROOT_NFS is not set
+# CONFIG_9P_FS is not set
+# CONFIG_AUTOFS_FS is not set
+# CONFIG_HUGETLBFS is not set
+# CONFIG_HUGETLB_PAGE is not set
+# CONFIG_COMPACTION is not set
+# CONFIG_MIGRATION is not set
+# CONFIG_OVERLAY_FS is not set
+# CONFIG_NLS is not set
+# CONFIG_LIBCRC32C is not set
+
+# Some tiny library crypto remains useful for Linux internals, but avoid
+# expensive self-tests and unrelated crypto drivers.
+CONFIG_CRYPTO=y
+CONFIG_CRYPTO_MANAGER_DISABLE_TESTS=y
+# CONFIG_CRYPTO_MANAGER_EXTRA_TESTS is not set
+# CONFIG_CRYPTO_USER_API_HASH is not set
+# CONFIG_CRYPTO_DEV_VIRTIO is not set
+# CONFIG_CRYPTO_GCM is not set
+# CONFIG_CRYPTO_GENIV is not set
+# CONFIG_CRYPTO_SEQIV is not set
+# CONFIG_CRYPTO_ECHAINIV is not set
+# CONFIG_CRYPTO_DRBG_MENU is not set
+# CONFIG_CRYPTO_JITTERENTROPY is not set
+
+# Debug and profiling features slow this small core down substantially.
+# CONFIG_IKCONFIG is not set
+# CONFIG_IKCONFIG_PROC is not set
+# CONFIG_KALLSYMS is not set
+# CONFIG_DEBUG_INFO is not set
+# CONFIG_DEBUG_FS is not set
+# CONFIG_DEBUG_MISC is not set
+# CONFIG_SLUB_DEBUG is not set
+# CONFIG_DEBUG_BUGVERBOSE is not set
+# CONFIG_DEBUG_PAGEALLOC is not set
+# CONFIG_DEBUG_VM is not set
+# CONFIG_DEBUG_VM_IRQSOFF is not set
+# CONFIG_DEBUG_VM_PGFLAGS is not set
+# CONFIG_DEBUG_VM_PGTABLE is not set
+# CONFIG_DEBUG_MEMORY_INIT is not set
+# CONFIG_LOCKUP_DETECTOR is not set
+# CONFIG_SOFTLOCKUP_DETECTOR is not set
+# CONFIG_DETECT_HUNG_TASK is not set
+# CONFIG_WQ_WATCHDOG is not set
+# CONFIG_SCHED_DEBUG is not set
+# CONFIG_DEBUG_TIMEKEEPING is not set
+# CONFIG_DEBUG_RT_MUTEXES is not set
+# CONFIG_DEBUG_SPINLOCK is not set
+# CONFIG_DEBUG_MUTEXES is not set
+# CONFIG_DEBUG_RWSEMS is not set
+# CONFIG_DEBUG_ATOMIC_SLEEP is not set
+# CONFIG_STACKTRACE is not set
+# CONFIG_STACKDEPOT is not set
+# CONFIG_DEBUG_LIST is not set
+# CONFIG_DEBUG_PLIST is not set
+# CONFIG_DEBUG_SG is not set
+# CONFIG_RCU_EQS_DEBUG is not set
+# CONFIG_RUNTIME_TESTING_MENU is not set
+# CONFIG_MEMTEST is not set
+# CONFIG_PERF_EVENTS is not set
+# CONFIG_PROFILING is not set
+
+CONFIG_CMDLINE_BOOL=y
+CONFIG_CMDLINE="earlycon=sbi console=hvc0 rdinit=/init loglevel=8 ignore_loglevel"
+# CONFIG_CMDLINE_FORCE is not set

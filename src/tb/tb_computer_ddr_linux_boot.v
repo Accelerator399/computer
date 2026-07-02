@@ -6,7 +6,8 @@ localparam integer CLKIN_PERIOD_PS = 10000;
 localparam integer RESET_PERIOD_PS = 200000;
 localparam integer APP_TIMEOUT_CYCLES = 20000;
 localparam integer DEFAULT_TIMEOUT_CYCLES = 1200000;
-localparam integer UART_BIT_CYCLES = 100000000 / 115200;
+localparam integer SIM_UART_BAUD_RATE = 5_000_000;
+localparam integer UART_BIT_CYCLES = 100000000 / SIM_UART_BAUD_RATE;
 localparam integer LINUX_BANNER_LEN = 33;
 localparam integer FW_BANNER_LEN = 4;
 localparam integer BAD_BANNER_LEN = 7;
@@ -198,7 +199,7 @@ mig_7series_0 u_mig_7series_0 (
 
 computer_ddr_bridge #(
     .CLK_FREQ(100_000_000),
-    .BAUD_RATE(115200),
+    .BAUD_RATE(SIM_UART_BAUD_RATE),
     .MMIO_BASE(32'h1000_0000),
     .TLB_ENTRIES(32),
     .MIG_ADDR_WIDTH(27)
@@ -206,6 +207,7 @@ computer_ddr_bridge #(
     .clk(ui_clk),
     .rst(computer_rst),
     .pad(pad),
+    .uart_rx_in(pad[10]),
     .ext_int(1'b0),
     .timer_int(1'b0),
     .soft_int(1'b0),
@@ -224,6 +226,7 @@ computer_ddr_bridge #(
     .i_page_fault_out(i_page_fault_out),
     .d_page_fault_out(d_page_fault_out),
     .satp_out(satp_out),
+    .uart_tx_out(),
     .ui_clk_sync_rst(ui_clk_sync_rst),
     .init_calib_complete(init_calib_complete),
     .app_addr(comp_app_addr),
@@ -669,8 +672,8 @@ initial begin
     cpu_released = 1'b1;
     clear_tb_app();
     $display("Released computer core for Linux boot simulation.");
-    $display("Waiting up to %0d ui_clk cycles; expect_banner=%0d banner_len=%0d",
-             run_timeout_cycles, expect_banner, banner_len());
+    $display("Waiting up to %0d ui_clk cycles; expect_banner=%0d banner_len=%0d sim_uart_baud=%0d",
+             run_timeout_cycles, expect_banner, banner_len(), SIM_UART_BAUD_RATE);
 
     for(timeout_cycles = 0;
         timeout_cycles < run_timeout_cycles &&

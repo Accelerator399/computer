@@ -10,7 +10,8 @@ module mmu_tlb #(
     input rst,
     input flush,
 
-    input [1:0] privilege,       // 00=U, 01=S, 11=M
+    input [1:0] privilege,       // Fetch privilege: 00=U, 01=S, 11=M
+    input [1:0] d_privilege,     // Data privilege after mstatus.MPRV handling.
     input mstatus_sum,
     input mstatus_mxr,
 
@@ -99,7 +100,7 @@ always @(*) begin
 end
 
 wire i_priv_ok = (privilege == 2'b00) ? tlb_u[i_hit_idx] : !tlb_u[i_hit_idx];
-wire d_priv_ok = (privilege == 2'b00) ? tlb_u[d_hit_idx] :
+wire d_priv_ok = (d_privilege == 2'b00) ? tlb_u[d_hit_idx] :
                  (tlb_u[d_hit_idx] ? mstatus_sum : 1'b1);
 wire d_read_ok = tlb_r[d_hit_idx] || (mstatus_mxr && tlb_x[d_hit_idx]);
 

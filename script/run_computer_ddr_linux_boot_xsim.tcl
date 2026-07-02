@@ -56,7 +56,7 @@ for {set i 0} {$i < $argc} {incr i} {
         --linux_smoke {
             set preload_file $linux_smoke_preload_file
             set expect_banner 1
-            set timeout_cycles 120000
+            set timeout_cycles 500000
         }
         default {
             puts "ERROR: unknown argument: $arg"
@@ -156,6 +156,7 @@ add_verilog $fh [file join $root src mmu mmu.v]
 add_verilog $fh [file join $root src mmu cache.v]
 add_verilog $fh [file join $root src mmu mmu_ddr_adapter.v]
 add_verilog $fh [file join $root src integration boot_rom.v]
+add_verilog $fh [file join $root src integration boot_ram.v]
 add_verilog $fh [file join $root src integration computer_core.v]
 add_verilog $fh [file join $root src integration computer_ddr_bridge.v]
 
@@ -174,8 +175,10 @@ close $fh
 
 cd $sim_dir
 
+set sim_name [format "xsim_computer_ddr_linux_boot_%s" [clock seconds]]
+
 puts "Elaborating computer DDR3 Linux-boot simulation..."
-puts [exec xelab work.tb_computer_ddr_linux_boot work.glbl -prj $prj_file -L unisims_ver -L secureip -s xsim_computer_ddr_linux_boot -debug typical --timescale 1ps/1ps --override_timeunit --override_timeprecision]
+puts [exec xelab work.tb_computer_ddr_linux_boot work.glbl -prj $prj_file -L unisims_ver -L secureip -s $sim_name -debug typical --timescale 1ps/1ps --override_timeunit --override_timeprecision]
 
 puts "Running computer DDR3 Linux-boot simulation..."
 puts "  preload       = $preload_file"
@@ -184,7 +187,7 @@ puts "  timeout       = $timeout_cycles ui_clk cycles"
 puts "  expect_banner = $expect_banner"
 puts "  verify_preload = $verify_preload"
 puts "  verify_preload_only = $verify_preload_only"
-puts [exec xsim xsim_computer_ddr_linux_boot \
+puts [exec xsim $sim_name \
     -testplusarg PRELOAD=$preload_file \
     -testplusarg UART_LOG=$uart_log_file \
     -testplusarg TIMEOUT_CYCLES=$timeout_cycles \

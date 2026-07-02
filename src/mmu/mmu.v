@@ -16,6 +16,7 @@ module mmu #(
     input sfence_vma,
 
     input [1:0] privilege,
+    input [1:0] d_privilege,
     input mstatus_sum,
     input mstatus_mxr,
 
@@ -84,7 +85,7 @@ wire mmu_enable = satp_reg[31];
 wire [21:0] root_ppn = satp_reg[21:0];
 
 wire i_bypass = (privilege == PRIV_M) || !mmu_enable;
-wire d_bypass = (privilege == PRIV_M) || !mmu_enable;
+wire d_bypass = (d_privilege == PRIV_M) || !mmu_enable;
 
 wire [33:0] tlb_i_paddr;
 wire [33:0] tlb_d_paddr;
@@ -111,6 +112,7 @@ mmu_tlb #(
     .rst(rst),
     .flush(tlb_flush),
     .privilege(privilege),
+    .d_privilege(d_privilege),
     .mstatus_sum(mstatus_sum),
     .mstatus_mxr(mstatus_mxr),
     .i_req_valid(i_req_valid && !i_bypass),
@@ -144,6 +146,7 @@ assign d_miss_count = d_miss_count_reg;
 reg [2:0] walk_state;
 reg walk_is_data;
 reg walk_write;
+reg [1:0] walk_privilege;
 reg [31:0] walk_vaddr;
 reg walk_fault;
 reg [31:0] l1_pte;
@@ -164,7 +167,7 @@ wire pte_d = active_pte[7];
 wire [21:0] pte_ppn = active_pte[31:10];
 wire pte_leaf = pte_r || pte_x;
 wire pte_invalid = !pte_v || (pte_w && !pte_r);
-wire pte_priv_fault = (privilege == PRIV_U) ? !pte_u :
+wire pte_priv_fault = (walk_privilege == PRIV_U) ? !pte_u :
                       (pte_u && (!walk_is_data || !mstatus_sum));
 wire pte_read_allowed = pte_r || (mstatus_mxr && pte_x);
 wire pte_perm_fault = walk_is_data ? (walk_write ? !pte_w : !pte_read_allowed) : !pte_x;
@@ -214,6 +217,7 @@ always @(posedge clk) begin
         walk_state <= WALK_IDLE;
         walk_is_data <= 1'b0;
         walk_write <= 1'b0;
+        walk_privilege <= PRIV_M;
         walk_vaddr <= 32'b0;
         walk_fault <= 1'b0;
         l1_pte <= 32'b0;
@@ -240,6 +244,7 @@ always @(posedge clk) begin
                 if(start_i_walk) begin
                     walk_is_data <= 1'b0;
                     walk_write <= 1'b0;
+                    walk_privilege <= privilege;
                     walk_vaddr <= i_vaddr;
                     walker_addr_reg <= {root_ppn, 12'b0} + {22'b0, i_vaddr[31:22], 2'b00};
                     walker_req_reg <= 1'b1;
@@ -248,6 +253,7 @@ always @(posedge clk) begin
                 end else if(start_d_walk) begin
                     walk_is_data <= 1'b1;
                     walk_write <= d_write;
+                    walk_privilege <= d_privilege;
                     walk_vaddr <= d_vaddr;
                     walker_addr_reg <= {root_ppn, 12'b0} + {22'b0, d_vaddr[31:22], 2'b00};
                     walker_req_reg <= 1'b1;

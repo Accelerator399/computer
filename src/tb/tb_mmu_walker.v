@@ -28,6 +28,7 @@ reg mstatus_sum;
 reg mstatus_mxr;
 
 reg [1:0] privilege;
+reg [1:0] d_privilege;
 
 reg i_req_valid;
 reg [31:0] i_vaddr;
@@ -63,6 +64,7 @@ mmu #(
     .csr_rdata(csr_rdata),
     .sfence_vma(sfence_vma),
     .privilege(privilege),
+    .d_privilege(d_privilege),
     .mstatus_sum(mstatus_sum),
     .mstatus_mxr(mstatus_mxr),
     .i_req_valid(i_req_valid),
@@ -239,6 +241,7 @@ initial begin
     mstatus_sum = 1'b0;
     mstatus_mxr = 1'b0;
     privilege = PRIV_M;
+    d_privilege = PRIV_M;
     i_req_valid = 1'b0;
     i_vaddr = 32'b0;
     d_req_valid = 1'b0;
@@ -251,6 +254,7 @@ initial begin
     #1;
 
     privilege = PRIV_S;
+    d_privilege = PRIV_S;
     i_vaddr = 32'h1234_5678;
     i_req_valid = 1'b1;
     #1;
@@ -276,6 +280,7 @@ initial begin
     check(csr_rdata == SATP_SV32_ROOT1, "satp CSR stores the Sv32 root PPN");
 
     privilege = PRIV_S;
+    d_privilege = PRIV_S;
     i_vaddr = 32'h0000_0000;
     i_req_valid = 1'b1;
     wait_i_ready(32, "instruction miss walks L1/L0 page tables");
@@ -365,6 +370,7 @@ initial begin
     clear_i_req();
 
     privilege = PRIV_S;
+    d_privilege = PRIV_S;
     i_vaddr = 32'h0000_3000;
     i_req_valid = 1'b1;
     wait_i_ready(32, "supervisor access to U page returns a page fault");
@@ -372,6 +378,7 @@ initial begin
     clear_i_req();
 
     privilege = PRIV_U;
+    d_privilege = PRIV_U;
     i_vaddr = 32'h0000_3000;
     i_req_valid = 1'b1;
     wait_i_ready(32, "user access to U page walks and fills the TLB");
@@ -380,6 +387,7 @@ initial begin
     clear_i_req();
 
     privilege = PRIV_S;
+    d_privilege = PRIV_S;
     pulse_sfence_vma();
     d_vaddr = 32'h0000_3000;
     d_write = 1'b0;
@@ -399,6 +407,7 @@ initial begin
     mstatus_sum = 1'b0;
 
     privilege = PRIV_S;
+    d_privilege = PRIV_S;
     d_vaddr = 32'h0000_2000;
     d_write = 1'b0;
     d_req_valid = 1'b1;
@@ -418,6 +427,7 @@ initial begin
     mstatus_mxr = 1'b0;
 
     privilege = PRIV_S;
+    d_privilege = PRIV_S;
     d_vaddr = 32'h0000_4000;
     d_write = 1'b0;
     d_req_valid = 1'b1;
@@ -437,6 +447,25 @@ initial begin
     d_req_valid = 1'b1;
     wait_d_ready(32, "store to PTE with D=0 returns a page fault");
     check(d_page_fault, "software-managed Dirty bit faults when D=0 on store");
+    clear_d_req();
+
+    privilege = PRIV_M;
+    d_privilege = PRIV_S;
+    pulse_sfence_vma();
+
+    i_vaddr = 32'h0000_0000;
+    i_req_valid = 1'b1;
+    #1;
+    check(i_translate_ready && !i_page_fault && i_paddr == 32'h0000_0000,
+          "M-mode instruction fetch still bypasses Sv32");
+    clear_i_req();
+
+    d_vaddr = 32'h0000_1004;
+    d_write = 1'b0;
+    d_req_valid = 1'b1;
+    wait_d_ready(32, "MPRV data load walks with S-mode effective privilege");
+    check(!d_page_fault, "MPRV=S data load succeeds through Sv32");
+    check(d_paddr == 32'h0000_4004, "MPRV=S data load maps VA 0x1004 to PA 0x4004");
     clear_d_req();
 
     $display("MMU WALKER PASS");

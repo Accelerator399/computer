@@ -61,6 +61,7 @@ reg [127:0] preload_data;
 
 integer cycle;
 integer errors;
+integer run_timeout_cycles;
 integer preload_fh;
 integer preload_scan;
 integer preload_count;
@@ -79,6 +80,7 @@ computer_core #(
     .clk(clk),
     .rst(rst),
     .pad(pad),
+    .uart_rx_in(pad[10]),
     .ext_int(1'b0),
     .timer_int(1'b0),
     .soft_int(1'b0),
@@ -101,6 +103,7 @@ computer_core #(
     .satp_out(satp_out),
     .i_tlb_miss_count_out(i_tlb_miss_count_out),
     .d_tlb_miss_count_out(d_tlb_miss_count_out),
+    .uart_tx_out(),
     .icache_mem_req(icache_mem_req),
     .icache_mem_we(icache_mem_we),
     .icache_mem_addr(icache_mem_addr),
@@ -288,15 +291,18 @@ initial begin
     rst = 1'b1;
     test_addr = 5'd0;
     errors = 0;
+    run_timeout_cycles = 500000;
+    if(!$value$plusargs("TIMEOUT_CYCLES=%d", run_timeout_cycles))
+        run_timeout_cycles = 500000;
 
     repeat(5) @(posedge clk);
     rst = 1'b0;
 
-    for(cycle = 0; cycle < 20000; cycle = cycle + 1) begin
+    for(cycle = 0; cycle < run_timeout_cycles; cycle = cycle + 1) begin
         @(posedge clk);
         #1;
         if(linux_banner_seen || bad_banner_seen)
-            cycle = 20000;
+            cycle = run_timeout_cycles;
     end
 
     check(linux_banner_seen, "preloaded OpenSBI-lite hands off to linux-smoke banner");

@@ -42,6 +42,7 @@ iomux #(
     .we(io_we),
     .rdata(io_rdata),
     .pad(pad),
+    .uart_rx_in(pad[10]),
     .uart_irq(uart_irq)
 );
 

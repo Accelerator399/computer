@@ -16,6 +16,7 @@ set srcs {
     src/cpu/cpu.v
     src/io/plic.v
     src/integration/boot_rom.v
+    src/integration/boot_ram.v
     src/tb/tb_boot_plic.v
 }
 

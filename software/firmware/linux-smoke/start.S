@@ -1,5 +1,7 @@
 #define UART_BASE 0x10010000
 #define UART_THR  0x00
+#define UART_LSR  0x14
+#define UART_LSR_THRE 0x20
 
     .section .text.start, "ax", @progbits
     .globl _start
@@ -17,6 +19,10 @@ _start:
 1:
     lbu     t2, 0(t1)
     beqz    t2, done
+3:
+    lw      t3, UART_LSR(t0)
+    andi    t3, t3, UART_LSR_THRE
+    beqz    t3, 3b
     sw      t2, UART_THR(t0)
     addi    t1, t1, 1
     j       1b
@@ -31,6 +37,10 @@ bad_boot:
 2:
     lbu     t2, 0(t1)
     beqz    t2, done
+4:
+    lw      t3, UART_LSR(t0)
+    andi    t3, t3, UART_LSR_THRE
+    beqz    t3, 4b
     sw      t2, UART_THR(t0)
     addi    t1, t1, 1
     j       2b
